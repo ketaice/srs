@@ -1,29 +1,27 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <srs_app_http_api.hpp>
-
-#ifdef SRS_AUTO_HTTP_API
 
 #include <sstream>
 #include <stdlib.h>
@@ -153,7 +151,7 @@ int SrsGoApiRoot::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
     obj->set("urls", urls);
     
     urls->set("api", SrsJsonAny::str("the api root"));
-        
+    
     return srs_api_response(w, r, obj->dumps());
 }
 
@@ -546,36 +544,16 @@ int SrsGoApiFeatures::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 #else
     features->set("ssl", SrsJsonAny::boolean(false));
 #endif
-#ifdef SRS_AUTO_HLS
     features->set("hls", SrsJsonAny::boolean(true));
-#else
-    features->set("hls", SrsJsonAny::boolean(false));
-#endif
 #ifdef SRS_AUTO_HDS
     features->set("hds", SrsJsonAny::boolean(true));
 #else
     features->set("hds", SrsJsonAny::boolean(false));
 #endif
-#ifdef SRS_AUTO_HTTP_CALLBACK
     features->set("callback", SrsJsonAny::boolean(true));
-#else
-    features->set("callback", SrsJsonAny::boolean(false));
-#endif
-#ifdef SRS_AUTO_HTTP_API
     features->set("api", SrsJsonAny::boolean(true));
-#else
-    features->set("api", SrsJsonAny::boolean(false));
-#endif
-#ifdef SRS_AUTO_HTTP_SERVER
     features->set("httpd", SrsJsonAny::boolean(true));
-#else
-    features->set("httpd", SrsJsonAny::boolean(false));
-#endif
-#ifdef SRS_AUTO_DVR
     features->set("dvr", SrsJsonAny::boolean(true));
-#else
-    features->set("dvr", SrsJsonAny::boolean(false));
-#endif
 #ifdef SRS_AUTO_TRANSCODE
     features->set("transcode", SrsJsonAny::boolean(true));
 #else
@@ -823,7 +801,11 @@ int SrsGoApiClients::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
             SrsJsonArray* data = SrsJsonAny::array();
             obj->set("clients", data);
             
-            if ((ret = stat->dumps_clients(data, 0, 10)) != ERROR_SUCCESS) {
+            std::string rstart = r->query_get("start");
+            std::string rcount = r->query_get("count");
+            int start = srs_max(0, atoi(rstart.c_str()));
+            int count = srs_max(10, atoi(rcount.c_str()));
+            if ((ret = stat->dumps_clients(data, start, count)) != ERROR_SUCCESS) {
                 return srs_api_response_code(w, r, ret);
             }
         } else {
@@ -917,7 +899,7 @@ int SrsGoApiRaw::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         server->on_signal(SRS_SIGNAL_RELOAD);
         return srs_api_response_code(w, r, ret);
     }
-
+    
     // for rpc=query, to get the configs of server.
     //      @param scope the scope to query for config, it can be:
     //              global, the configs belongs to the root, donot includes any sub directives.
@@ -1028,7 +1010,7 @@ int SrsGoApiRaw::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
             && scope != "ff_log_dir" && scope != "srs_log_tank" && scope != "srs_log_level"
             && scope != "srs_log_file" && scope != "max_connections" && scope != "utc_time"
             && scope != "pithy_print_ms" && scope != "vhost" && scope != "dvr"
-        ) {
+            ) {
             ret = ERROR_SYSTEM_CONFIG_RAW_NOT_ALLOWED;
             srs_error("raw api query invalid scope=%s. ret=%d", scope.c_str(), ret);
             return srs_api_response_code(w, r, ret);
@@ -1309,7 +1291,7 @@ int SrsGoApiError::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 }
 
 SrsHttpApi::SrsHttpApi(IConnectionManager* cm, st_netfd_t fd, SrsHttpServeMux* m, string cip)
-    : SrsConnection(cm, fd, cip)
+: SrsConnection(cm, fd, cip)
 {
     mux = m;
     cors = new SrsHttpCorsMux();
@@ -1360,12 +1342,9 @@ int SrsHttpApi::do_cycle()
         return ret;
     }
     
-    // underlayer socket
-    SrsStSocket skt(stfd);
-    
     // set the recv timeout, for some clients never disconnect the connection.
     // @see https://github.com/ossrs/srs/issues/398
-    skt.set_recv_timeout(SRS_HTTP_RECV_TIMEOUT_US);
+    skt->set_recv_timeout(SRS_HTTP_RECV_TMMS);
     
     // initialize the cors, which will proxy to mux.
     bool crossdomain_enabled = _srs_config->get_http_api_crossdomain();
@@ -1378,10 +1357,10 @@ int SrsHttpApi::do_cycle()
         ISrsHttpMessage* req = NULL;
         
         // get a http message
-        if ((ret = parser->parse_message(&skt, this, &req)) != ERROR_SUCCESS) {
+        if ((ret = parser->parse_message(skt, this, &req)) != ERROR_SUCCESS) {
             return ret;
         }
-
+        
         // if SUCCESS, always NOT-NULL.
         srs_assert(req);
         
@@ -1389,11 +1368,11 @@ int SrsHttpApi::do_cycle()
         SrsAutoFree(ISrsHttpMessage, req);
         
         // ok, handle http request.
-        SrsHttpResponseWriter writer(&skt);
+        SrsHttpResponseWriter writer(skt);
         if ((ret = process_request(&writer, req)) != ERROR_SUCCESS) {
             return ret;
         }
-
+        
         // read all rest bytes in request body.
         char buf[SRS_HTTP_READ_CACHE_BYTES];
         ISrsHttpResponseReader* br = req->body_reader();
@@ -1402,27 +1381,27 @@ int SrsHttpApi::do_cycle()
                 return ret;
             }
         }
-
+        
         // donot keep alive, disconnect it.
         // @see https://github.com/ossrs/srs/issues/399
         if (!req->is_keep_alive()) {
             break;
         }
     }
-        
+    
     return ret;
 }
 
-int SrsHttpApi::process_request(ISrsHttpResponseWriter* w, ISrsHttpMessage* r) 
+int SrsHttpApi::process_request(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     int ret = ERROR_SUCCESS;
     
     SrsHttpMessage* hm = dynamic_cast<SrsHttpMessage*>(r);
     srs_assert(hm);
     
-    srs_trace("HTTP API %s %s, content-length=%"PRId64", chunked=%d/%d",
-        r->method_str().c_str(), r->url().c_str(), r->content_length(),
-        hm->is_chunked(), hm->is_infinite_chunked());
+    srs_trace("HTTP API %s %s, content-length=%" PRId64 ", chunked=%d/%d",
+              r->method_str().c_str(), r->url().c_str(), r->content_length(),
+              hm->is_chunked(), hm->is_infinite_chunked());
     
     // use cors server mux to serve http request, which will proxy to mux.
     if ((ret = cors->serve_http(w, r)) != ERROR_SUCCESS) {
@@ -1446,6 +1425,4 @@ int SrsHttpApi::on_reload_http_api_crossdomain()
     
     return ERROR_SUCCESS;
 }
-
-#endif
 

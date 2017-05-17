@@ -1,32 +1,28 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #ifndef SRS_APP_STATISTIC_HPP
 #define SRS_APP_STATISTIC_HPP
-
-/*
-#include <srs_app_statistic.hpp>
-*/
 
 #include <srs_core.hpp>
 
@@ -52,8 +48,8 @@ public:
     int nb_clients;
 public:
     /**
-    * vhost total kbps.
-    */
+     * vhost total kbps.
+     */
     SrsKbps* kbps;
 public:
     SrsStatisticVhost();
@@ -73,32 +69,33 @@ public:
     bool active;
     int connection_cid;
     int nb_clients;
+    uint64_t nb_frames;
 public:
     /**
-    * stream total kbps.
-    */
+     * stream total kbps.
+     */
     SrsKbps* kbps;
 public:
     bool has_video;
-    SrsCodecVideo vcodec;
-    // profile_idc, H.264-AVC-ISO_IEC_14496-10.pdf, page 45.
+    SrsVideoCodecId vcodec;
+    // profile_idc, ISO_IEC_14496-10-AVC-2003.pdf, page 45.
     SrsAvcProfile avc_profile;
-    // level_idc, H.264-AVC-ISO_IEC_14496-10.pdf, page 45.
+    // level_idc, ISO_IEC_14496-10-AVC-2003.pdf, page 45.
     SrsAvcLevel avc_level;
     // the width and height in codec info.
     int width;
     int height;
 public:
     bool has_audio;
-    SrsCodecAudio acodec;
-    SrsCodecAudioSampleRate asample_rate;
-    SrsCodecAudioSoundType asound_type;
+    SrsAudioCodecId acodec;
+    SrsAudioSampleRate asample_rate;
+    SrsAudioChannels asound_type;
     /**
-    * audio specified
-    * audioObjectType, in 1.6.2.1 AudioSpecificConfig, page 33,
-    * 1.5.1.1 Audio object type definition, page 23,
-    *           in aac-mp4a-format-ISO_IEC_14496-3+2001.pdf.
-    */
+     * audio specified
+     * audioObjectType, in 1.6.2.1 AudioSpecificConfig, page 33,
+     * 1.5.1.1 Audio object type definition, page 23,
+     *           in ISO_IEC_14496-3-AAC-2001.pdf.
+     */
     SrsAacObjectType aac_object;
 public:
     SrsStatisticStream();
@@ -107,12 +104,12 @@ public:
     virtual int dumps(SrsJsonObject* obj);
 public:
     /**
-    * publish the stream.
-    */
+     * publish the stream.
+     */
     virtual void publish(int cid);
     /**
-    * close the stream.
-    */
+     * close the stream.
+     */
     virtual void close();
 };
 
@@ -167,19 +164,18 @@ public:
     virtual SrsStatisticClient* find_client(int cid);
 public:
     /**
-    * when got video info for stream.
-    */
-    virtual int on_video_info(SrsRequest* req, 
-        SrsCodecVideo vcodec, SrsAvcProfile avc_profile, SrsAvcLevel avc_level,
-        int width, int height
-    );
+     * when got video info for stream.
+     */
+    virtual int on_video_info(SrsRequest* req, SrsVideoCodecId vcodec, SrsAvcProfile avc_profile, SrsAvcLevel avc_level, int width, int height);
     /**
-    * when got audio info for stream.
-    */
-    virtual int on_audio_info(SrsRequest* req,
-        SrsCodecAudio acodec, SrsCodecAudioSampleRate asample_rate, SrsCodecAudioSoundType asound_type,
-        SrsAacObjectType aac_object
-    );
+     * when got audio info for stream.
+     */
+    virtual int on_audio_info(SrsRequest* req, SrsAudioCodecId acodec, SrsAudioSampleRate asample_rate, SrsAudioChannels asound_type, SrsAacObjectType aac_object);
+    /**
+     * When got videos, update the frames.
+     * We only stat the total number of video frames.
+     */
+    virtual int on_video_frames(SrsRequest* req, int nb_frames);
     /**
      * when publish stream.
      * @param req the request object of publish connection.
@@ -187,8 +183,8 @@ public:
      */
     virtual void on_stream_publish(SrsRequest* req, int cid);
     /**
-    * when close stream.
-    */
+     * when close stream.
+     */
     virtual void on_stream_close(SrsRequest* req);
 public:
     /**
@@ -207,29 +203,29 @@ public:
      */
     virtual void on_disconnect(int id);
     /**
-    * sample the kbps, add delta bytes of conn.
-    * use kbps_sample() to get all result of kbps stat.
-    */
+     * sample the kbps, add delta bytes of conn.
+     * use kbps_sample() to get all result of kbps stat.
+     */
     // TODO: FIXME: the add delta must use IKbpsDelta interface instead.
     virtual void kbps_add_delta(SrsConnection* conn);
     /**
-    * calc the result for all kbps.
-    * @return the server kbps.
-    */
+     * calc the result for all kbps.
+     * @return the server kbps.
+     */
     virtual SrsKbps* kbps_sample();
 public:
     /**
-    * get the server id, used to identify the server.
-    * for example, when restart, the server id must changed.
-    */
+     * get the server id, used to identify the server.
+     * for example, when restart, the server id must changed.
+     */
     virtual int64_t server_id();
     /**
-    * dumps the vhosts to amf0 array.
-    */
+     * dumps the vhosts to amf0 array.
+     */
     virtual int dumps_vhosts(SrsJsonArray* arr);
     /**
-    * dumps the streams to amf0 array.
-    */
+     * dumps the streams to amf0 array.
+     */
     virtual int dumps_streams(SrsJsonArray* arr);
     /**
      * dumps the clients to amf0 array

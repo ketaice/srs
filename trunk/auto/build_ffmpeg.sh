@@ -42,7 +42,7 @@ else
     echo "build fdk-aac-0.1.3"
     cd $ff_current_dir &&
     rm -rf fdk-aac-0.1.3 && unzip -q ${ff_src_dir}/fdk-aac-0.1.3.zip &&
-    cd fdk-aac-0.1.3 && bash autogen.sh && ./configure --prefix=${ff_release_dir} --enable-static && make ${SRS_JOBS} && make install &&
+    cd fdk-aac-0.1.3 && bash autogen.sh && ./configure --prefix=${ff_release_dir} --enable-static && make ${SRS_JOBS} && make install
     ret=$?; if [[ 0 -ne ${ret} ]]; then echo "build fdk-aac-0.1.3 failed"; exit 1; fi
 fi
 
@@ -84,19 +84,18 @@ else
     ret=$?; if [[ 0 -ne ${ret} ]]; then echo "build x264 failed"; exit 1; fi
 fi
 
-# ffmpeg-2.1.1
+# ffmpeg-3.2.4
 if [[ -f ${ff_release_dir}/bin/ffmpeg ]]; then
-    echo "ffmpeg-2.1.1 is ok"
+    echo "ffmpeg-3.2.4 is ok"
 else
-    echo "build ffmpeg-2.1.1"
+    echo "build ffmpeg-3.2.4"
     cd $ff_current_dir &&
-    rm -rf ffmpeg-2.1.1 && unzip -q ${ff_src_dir}/ffmpeg-2.1.1.zip &&
+    rm -rf ffmpeg-3.2.4 && unzip -q ${ff_src_dir}/ffmpeg-3.2.4.zip &&
     echo "remove all so to force the ffmpeg to build in static" &&
     rm -f ${ff_release_dir}/lib/*.so* &&
     echo "export the dir to enable the build command canbe use." &&
     export ffmpeg_exported_release_dir=${ff_release_dir} &&
-    cd ffmpeg-2.1.1 && 
-    ./configure \
+    cd ffmpeg-3.2.4 && patch -p0 <../../../3rdparty/patches/6.ffmpeg.speex.patch && ./configure \
         --enable-gpl --enable-nonfree \
         --yasmexe=${ff_yasm_bin} \
         --prefix=${ff_release_dir} --cc= \

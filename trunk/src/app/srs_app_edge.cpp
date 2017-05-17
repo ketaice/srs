@@ -1,25 +1,25 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <srs_app_edge.hpp>
 
@@ -48,19 +48,16 @@ using namespace std;
 #include <srs_app_rtmp_conn.hpp>
 
 // when error, edge ingester sleep for a while and retry.
-#define SRS_EDGE_INGESTER_SLEEP_US (int64_t)(3*1000*1000LL)
+#define SRS_EDGE_INGESTER_CIMS (3*1000)
 
 // when edge timeout, retry next.
-#define SRS_EDGE_INGESTER_TIMEOUT_US (int64_t)(5*1000*1000LL)
+#define SRS_EDGE_INGESTER_TMMS (5*1000)
 
 // when error, edge ingester sleep for a while and retry.
-#define SRS_EDGE_FORWARDER_SLEEP_US (int64_t)(3*1000*1000LL)
-
-// when edge timeout, retry next.
-#define SRS_EDGE_FORWARDER_TIMEOUT_US (int64_t)(5*1000*1000LL)
+#define SRS_EDGE_FORWARDER_CIMS (3*1000)
 
 // when edge error, wait for quit
-#define SRS_EDGE_FORWARDER_ERROR_US (int64_t)(50*1000LL)
+#define SRS_EDGE_FORWARDER_TMMS (150)
 
 SrsEdgeUpstream::SrsEdgeUpstream()
 {
@@ -73,14 +70,12 @@ SrsEdgeUpstream::~SrsEdgeUpstream()
 SrsEdgeRtmpUpstream::SrsEdgeRtmpUpstream(string r)
 {
     redirect = r;
-    sdk = new SrsSimpleRtmpClient();
+    sdk = NULL;
 }
 
 SrsEdgeRtmpUpstream::~SrsEdgeRtmpUpstream()
 {
     close();
-    
-    srs_freep(sdk);
 }
 
 int SrsEdgeRtmpUpstream::connect(SrsRequest* r, SrsLbRoundRobin* lb)
@@ -126,10 +121,13 @@ int SrsEdgeRtmpUpstream::connect(SrsRequest* r, SrsLbRoundRobin* lb)
         url = srs_generate_rtmp_url(server, port, vhost, req->app, req->stream);
     }
     
-    int64_t cto = SRS_EDGE_INGESTER_TIMEOUT_US;
-    int64_t sto = SRS_CONSTS_RTMP_PULSE_TIMEOUT_US;
-    if ((ret = sdk->connect(url, cto, sto)) != ERROR_SUCCESS) {
-        srs_error("edge pull %s failed, cto=%"PRId64", sto=%"PRId64". ret=%d", url.c_str(), cto, sto, ret);
+    srs_freep(sdk);
+    int64_t cto = SRS_EDGE_INGESTER_TMMS;
+    int64_t sto = SRS_CONSTS_RTMP_PULSE_TMMS;
+    sdk = new SrsSimpleRtmpClient(url, cto, sto);
+    
+    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+        srs_error("edge pull %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", url.c_str(), cto, sto, ret);
         return ret;
     }
     
@@ -153,12 +151,12 @@ int SrsEdgeRtmpUpstream::decode_message(SrsCommonMessage* msg, SrsPacket** ppack
 
 void SrsEdgeRtmpUpstream::close()
 {
-    sdk->close();
+    srs_freep(sdk);
 }
 
-void SrsEdgeRtmpUpstream::set_recv_timeout(int64_t timeout)
+void SrsEdgeRtmpUpstream::set_recv_timeout(int64_t tm)
 {
-    sdk->set_recv_timeout(timeout);
+    sdk->set_recv_timeout(tm);
 }
 
 void SrsEdgeRtmpUpstream::kbps_sample(const char* label, int64_t age)
@@ -174,11 +172,11 @@ SrsEdgeIngester::SrsEdgeIngester()
     
     upstream = new SrsEdgeRtmpUpstream(redirect);
     lb = new SrsLbRoundRobin();
-    pthread = new SrsReusableThread2("edge-igs", this, SRS_EDGE_INGESTER_SLEEP_US);
+    pthread = new SrsReusableThread2("edge-igs", this, SRS_EDGE_INGESTER_CIMS);
 }
 
 SrsEdgeIngester::~SrsEdgeIngester()
-{   
+{
     stop();
     
     srs_freep(upstream);
@@ -200,12 +198,12 @@ int SrsEdgeIngester::initialize(SrsSource* s, SrsPlayEdge* e, SrsRequest* r)
 int SrsEdgeIngester::start()
 {
     int ret = ERROR_SUCCESS;
-
+    
     if ((ret = source->on_publish()) != ERROR_SUCCESS) {
         srs_error("edge pull stream then publish to edge failed. ret=%d", ret);
         return ret;
     }
-
+    
     return pthread->start();
 }
 
@@ -215,7 +213,9 @@ void SrsEdgeIngester::stop()
     upstream->close();
     
     // notice to unpublish.
-    source->on_unpublish();
+    if (source) {
+        source->on_unpublish();
+    }
 }
 
 string SrsEdgeIngester::get_curr_origin()
@@ -273,7 +273,7 @@ int SrsEdgeIngester::ingest()
     SrsAutoFree(SrsPithyPrint, pprint);
     
     // set to larger timeout to read av data from origin.
-    upstream->set_recv_timeout(SRS_EDGE_INGESTER_TIMEOUT_US);
+    upstream->set_recv_timeout(SRS_EDGE_INGESTER_TMMS);
     
     while (!pthread->interrupted()) {
         pprint->elapse();
@@ -307,7 +307,7 @@ int SrsEdgeIngester::ingest()
 int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
-        
+    
     // process audio packet
     if (msg->header.is_audio()) {
         if ((ret = source->on_audio(msg)) != ERROR_SUCCESS) {
@@ -332,7 +332,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
         }
         return ret;
     }
-
+    
     // process onMetaData
     if (msg->header.is_amf0_data() || msg->header.is_amf3_data()) {
         SrsPacket* pkt = NULL;
@@ -341,7 +341,7 @@ int SrsEdgeIngester::process_publish_message(SrsCommonMessage* msg)
             return ret;
         }
         SrsAutoFree(SrsPacket, pkt);
-    
+        
         if (dynamic_cast<SrsOnMetaDataPacket*>(pkt)) {
             SrsOnMetaDataPacket* metadata = dynamic_cast<SrsOnMetaDataPacket*>(pkt);
             if ((ret = source->on_meta_data(msg, metadata)) != ERROR_SUCCESS) {
@@ -406,9 +406,9 @@ SrsEdgeForwarder::SrsEdgeForwarder()
     req = NULL;
     send_error_code = ERROR_SUCCESS;
     
-    sdk = new SrsSimpleRtmpClient();
+    sdk = NULL;
     lb = new SrsLbRoundRobin();
-    pthread = new SrsReusableThread2("edge-fwr", this, SRS_EDGE_FORWARDER_SLEEP_US);
+    pthread = new SrsReusableThread2("edge-fwr", this, SRS_EDGE_FORWARDER_CIMS);
     queue = new SrsMessageQueue();
 }
 
@@ -416,7 +416,6 @@ SrsEdgeForwarder::~SrsEdgeForwarder()
 {
     stop();
     
-    srs_freep(sdk);
     srs_freep(lb);
     srs_freep(pthread);
     srs_freep(queue);
@@ -464,10 +463,13 @@ int SrsEdgeForwarder::start()
     }
     
     // open socket.
-    int64_t cto = SRS_EDGE_FORWARDER_TIMEOUT_US;
-    int64_t sto = SRS_CONSTS_RTMP_TIMEOUT_US;
-    if ((ret = sdk->connect(url, cto, sto)) != ERROR_SUCCESS) {
-        srs_warn("edge push %s failed, cto=%"PRId64", sto=%"PRId64". ret=%d", url.c_str(), cto, sto, ret);
+    srs_freep(sdk);
+    int64_t cto = SRS_EDGE_FORWARDER_TMMS;
+    int64_t sto = SRS_CONSTS_RTMP_TMMS;
+    sdk = new SrsSimpleRtmpClient(url, cto, sto);
+    
+    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+        srs_warn("edge push %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", url.c_str(), cto, sto, ret);
         return ret;
     }
     
@@ -482,8 +484,8 @@ int SrsEdgeForwarder::start()
 void SrsEdgeForwarder::stop()
 {
     pthread->stop();
-    sdk->close();
     queue->clear();
+    srs_freep(sdk);
 }
 
 #define SYS_MAX_EDGE_SEND_MSGS 128
@@ -492,19 +494,19 @@ int SrsEdgeForwarder::cycle()
 {
     int ret = ERROR_SUCCESS;
     
-    sdk->set_recv_timeout(SRS_CONSTS_RTMP_PULSE_TIMEOUT_US);
+    sdk->set_recv_timeout(SRS_CONSTS_RTMP_PULSE_TMMS);
     
     SrsPithyPrint* pprint = SrsPithyPrint::create_edge();
     SrsAutoFree(SrsPithyPrint, pprint);
     
     SrsMessageArray msgs(SYS_MAX_EDGE_SEND_MSGS);
-
+    
     while (!pthread->interrupted()) {
         if (send_error_code != ERROR_SUCCESS) {
-            st_usleep(SRS_EDGE_FORWARDER_ERROR_US);
+            st_usleep(SRS_EDGE_FORWARDER_TMMS * 1000);
             continue;
         }
-
+        
         // read from client.
         if (true) {
             SrsCommonMessage* msg = NULL;
@@ -540,7 +542,7 @@ int SrsEdgeForwarder::cycle()
             srs_verbose("edge no packets to push.");
             continue;
         }
-    
+        
         // sendout messages, all messages are freed by send_and_free_messages().
         if ((ret = sdk->send_and_free_messages(msgs.msgs, count)) != ERROR_SUCCESS) {
             srs_error("edge publish push message to server failed. ret=%d", ret);
@@ -566,7 +568,7 @@ int SrsEdgeForwarder::proxy(SrsCommonMessage* msg)
         || msg->header.is_set_chunk_size()
         || msg->header.is_window_ackledgement_size()
         || msg->header.is_ackledgement()
-    ) {
+        ) {
         return ret;
     }
     
@@ -616,7 +618,7 @@ int SrsPlayEdge::on_client_play()
         state = SrsEdgeStatePlay;
         return ingester->start();
     }
-
+    
     return ret;
 }
 
@@ -626,7 +628,7 @@ void SrsPlayEdge::on_all_client_stop()
     // and edge is ingesting origin stream, abort it.
     if (state == SrsEdgeStatePlay || state == SrsEdgeStateIngestConnected) {
         ingester->stop();
-    
+        
         SrsEdgeState pstate = state;
         state = SrsEdgeStateInit;
         srs_trace("edge change from %d to state %d (init).", pstate, state);
@@ -677,7 +679,7 @@ void SrsPublishEdge::set_queue_size(double queue_size)
 int SrsPublishEdge::initialize(SrsSource* source, SrsRequest* req)
 {
     int ret = ERROR_SUCCESS;
-
+    
     if ((ret = forwarder->initialize(source, this, req)) != ERROR_SUCCESS) {
         return ret;
     }
@@ -698,7 +700,7 @@ int SrsPublishEdge::on_client_publish()
     if (state != SrsEdgeStateInit) {
         ret = ERROR_RTMP_EDGE_PUBLISH_STATE;
         srs_error("invalid state for client to publish stream on edge. "
-            "state=%d, ret=%d", state, ret);
+                  "state=%d, ret=%d", state, ret);
         return ret;
     }
     

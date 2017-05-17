@@ -1,40 +1,34 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #ifndef SRS_APP_ST_HPP
 #define SRS_APP_ST_HPP
-
-/*
-#include <srs_app_st.hpp>
-*/
 
 #include <srs_core.hpp>
 
 #include <string>
 
-#include <st.h>
-
-#include <srs_app_st.hpp>
+#include <srs_service_st.hpp>
 #include <srs_protocol_io.hpp>
 
 // the internal classes, user should never use it.
@@ -100,24 +94,22 @@ namespace internal
     class SrsThread
     {
     private:
-        st_thread_t tid;
-        int _cid;
+        st_thread_t trd;
+        int context_id;
         bool loop;
-        bool can_run;
-        bool really_terminated;
-        bool _joinable;
-        const char* _name;
-        bool disposed;
+        bool joinable;
+        const char* name;
     private:
         ISrsThreadHandler* handler;
-        int64_t cycle_interval_us;
+        // The cycle interval in ms.
+        int64_t cims;
     public:
         /**
          * initialize the thread.
-         * @param name, human readable name for st debug.
-         * @param thread_handler, the cycle handler for the thread.
-         * @param interval_us, the sleep interval when cycle finished.
-         * @param joinable, if joinable, other thread must stop the thread.
+         * @param n, human readable name for st debug.
+         * @param h, the cycle handler for the thread.
+         * @param ims, the sleep interval in ms when cycle finished.
+         * @param j, if joinable, other thread must stop the thread.
          * @remark if joinable, thread never quit itself, or memory leak.
          * @see: https://github.com/ossrs/srs/issues/78
          * @remark about st debug, see st-1.9/README, _st_iterate_threads_flag
@@ -126,7 +118,7 @@ namespace internal
          * TODO: FIXME: maybe all thread must be reap by others threads,
          * @see: https://github.com/ossrs/srs/issues/77
          */
-        SrsThread(const char* name, ISrsThreadHandler* thread_handler, int64_t interval_us, bool joinable);
+        SrsThread(const char* n, ISrsThreadHandler* h, int64_t ims, bool j);
         virtual ~SrsThread();
     public:
         /**
@@ -162,100 +154,10 @@ namespace internal
          */
         virtual void stop_loop();
     private:
-        virtual void dispose();
-        virtual void thread_cycle();
-        static void* thread_fun(void* arg);
+        virtual void cycle();
+        static void* pfn(void* arg);
     };
 }
-
-/**
- * the socket provides TCP socket over st,
- * that is, the sync socket mechanism.
- */
-class SrsStSocket : public ISrsProtocolReaderWriter
-{
-private:
-    int64_t recv_timeout;
-    int64_t send_timeout;
-    int64_t recv_bytes;
-    int64_t send_bytes;
-    st_netfd_t stfd;
-public:
-    SrsStSocket(st_netfd_t client_stfd);
-    virtual ~SrsStSocket();
-public:
-    virtual bool is_never_timeout(int64_t timeout_us);
-    virtual void set_recv_timeout(int64_t timeout_us);
-    virtual int64_t get_recv_timeout();
-    virtual void set_send_timeout(int64_t timeout_us);
-    virtual int64_t get_send_timeout();
-    virtual int64_t get_recv_bytes();
-    virtual int64_t get_send_bytes();
-public:
-    /**
-     * @param nread, the actual read bytes, ignore if NULL.
-     */
-    virtual int read(void* buf, size_t size, ssize_t* nread);
-    virtual int read_fully(void* buf, size_t size, ssize_t* nread);
-    /**
-     * @param nwrite, the actual write bytes, ignore if NULL.
-     */
-    virtual int write(void* buf, size_t size, ssize_t* nwrite);
-    virtual int writev(const iovec *iov, int iov_size, ssize_t* nwrite);
-};
-
-/**
- * the common tcp client, to connect to specified TCP server,
- * reconnect and close the connection.
- */
-class SrsTcpClient : public ISrsProtocolReaderWriter
-{
-private:
-    st_netfd_t stfd;
-    SrsStSocket* io;
-public:
-    SrsTcpClient();
-    virtual ~SrsTcpClient();
-public:
-    /**
-     * whether connected to server.
-     */
-    virtual bool connected();
-public:
-    /**
-     * connect to server over TCP.
-     * @param host the ip or hostname of server.
-     * @param port the port to connect to.
-     * @param timeout the timeout in us.
-     * @remark ignore when connected.
-     */
-    virtual int connect(std::string host, int port, int64_t timeout);
-    /**
-     * close the connection.
-     * @remark ignore when closed.
-     */
-    virtual void close();
-// interface ISrsProtocolReaderWriter
-public:
-    virtual bool is_never_timeout(int64_t timeout_us);
-    virtual void set_recv_timeout(int64_t timeout_us);
-    virtual int64_t get_recv_timeout();
-    virtual void set_send_timeout(int64_t timeout_us);
-    virtual int64_t get_send_timeout();
-    virtual int64_t get_recv_bytes();
-    virtual int64_t get_send_bytes();
-    virtual int read(void* buf, size_t size, ssize_t* nread);
-    virtual int read_fully(void* buf, size_t size, ssize_t* nread);
-    virtual int write(void* buf, size_t size, ssize_t* nwrite);
-    virtual int writev(const iovec *iov, int iov_size, ssize_t* nwrite);
-};
-
-// initialize st, requires epoll.
-extern int srs_st_init();
-
-// close the netfd, and close the underlayer fd.
-// @remark when close, user must ensure io completed.
-extern void srs_close_stfd(st_netfd_t& stfd);
 
 #endif
 

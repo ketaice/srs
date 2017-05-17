@@ -1,24 +1,24 @@
-/*
- The MIT License (MIT)
- 
- Copyright (c) 2013-2017 SRS(ossrs)
- 
- Permission is hereby granted, free of charge, to any person obtaining a copy of
- this software and associated documentation files (the "Software"), to deal in
- the Software without restriction, including without limitation the rights to
- use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
- the Software, and to permit persons to whom the Software is furnished to do so,
- subject to the following conditions:
- 
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
- 
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
- COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
- IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
 #include <srs_kafka_stack.hpp>
@@ -212,7 +212,7 @@ void SrsKafkaBytes::set_value(const char* v, int nb_v)
     memcpy(_data, v, _size);
 }
 
-u_int32_t SrsKafkaBytes::crc32(u_int32_t previous)
+uint32_t SrsKafkaBytes::crc32(uint32_t previous)
 {
     char bsize[4];
     SrsBuffer(bsize, 4).write_4bytes(_size);
@@ -221,7 +221,7 @@ u_int32_t SrsKafkaBytes::crc32(u_int32_t previous)
         return srs_crc32_ieee(bsize, 4, previous);
     }
     
-    u_int32_t crc = srs_crc32_ieee(bsize, 4, previous);
+    uint32_t crc = srs_crc32_ieee(bsize, 4, previous);
     crc = srs_crc32_ieee(_data, _size, crc);
     
     return crc;
@@ -850,7 +850,7 @@ int SrsKafkaBroker::encode(SrsBuffer* buf)
         return ret;
     }
     buf->write_4bytes(port);
-
+    
     return ret;
 }
 

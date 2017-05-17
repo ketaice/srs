@@ -1,8 +1,11 @@
 .idea/
 /*.conf
+/*.txt
+/*.flv
 /doc/frozen*.flv
 /doc/kungfupanda*.flv
 /doc/time*.flv
+/doc/source*.mp4
 /html
 /ide/srs_xcode/srs_xcode.xcodeproj/project.xcworkspace/xcshareddata/
 /ide/srs_xcode/srs_xcode.xcodeproj/project.xcworkspace/xcuserdata/
@@ -29,4 +32,6 @@
 /research/snap/
 /research/speex/
 /test/
+.DS_Store
+srs
 

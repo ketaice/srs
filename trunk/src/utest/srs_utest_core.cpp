@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2017 SRS(ossrs)
+Copyright (c) 2013-2017 OSSRS(winlin)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -31,12 +31,12 @@ using namespace std;
 VOID TEST(CoreAutoFreeTest, Free)
 {
     char* data = new char[32];
-    srs_freep(data);
+    srs_freepa(data);
     EXPECT_TRUE(data == NULL);
 
     if (true) {
         data = new char[32];
-        SrsAutoFree(char, data);
+        SrsAutoFreeA(char, data);
     }
     EXPECT_TRUE(data == NULL);
 }

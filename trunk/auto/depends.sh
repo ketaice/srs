@@ -101,12 +101,23 @@ function Ubuntu_prepare()
         sudo apt-get install -y --force-yes unzip; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
         echo "The unzip is installed."
     fi
-    
-    valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
-        echo "Installing valgrind."
-        require_sudoer "sudo apt-get install -y --force-yes valgrind valgrind-dev"
-        sudo apt-get install -y --force-yes valgrind valgrind-dev; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
-        echo "The valgrind is installed."
+
+    if [[ $SRS_VALGRIND == YES ]]; then
+        valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
+            echo "Installing valgrind."
+            require_sudoer "sudo apt-get install -y --force-yes valgrind"
+            sudo apt-get install -y --force-yes valgrind; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
+            echo "The valgrind is installed."
+        fi
+    fi
+
+    if [[ $SRS_VALGRIND == YES ]]; then
+        if [[ ! -f /usr/include/valgrind/valgrind.h ]]; then
+            echo "Installing valgrind-dev."
+            require_sudoer "sudo apt-get install -y --force-yes valgrind-dev"
+            sudo apt-get install -y --force-yes valgrind-dev; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
+            echo "The valgrind-dev is installed."
+        fi
     fi
 
     if [ $SRS_NGINX = YES ]; then
@@ -201,12 +212,23 @@ function Centos_prepare()
         sudo yum install -y unzip; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
         echo "The unzip is installed."
     fi
-    
-    valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
-        echo "Installing valgrind."
-        require_sudoer "sudo yum install -y valgrind valgrind-devel"
-        sudo yum install -y valgrind valgrind-devel; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
-        echo "The valgrind is installed."
+
+    if [[ $SRS_VALGRIND == YES ]]; then
+        valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
+            echo "Installing valgrind."
+            require_sudoer "sudo yum install -y valgrind"
+            sudo yum install -y valgrind; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
+            echo "The valgrind is installed."
+        fi
+    fi
+
+    if [[ $SRS_VALGRIND == YES ]]; then
+        if [[ ! -f /usr/include/valgrind/valgrind.h ]]; then
+            echo "Installing valgrind-devel."
+            require_sudoer "sudo yum install -y valgrind-devel"
+            sudo yum install -y valgrind-devel; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
+            echo "The valgrind-devel is installed."
+        fi
     fi
 
     if [ $SRS_NGINX = YES ]; then
@@ -327,12 +349,14 @@ function OSX_prepare()
         brew install unzip; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
         echo "The unzip is installed."
     fi
-    
-    valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
-        echo "Installing valgrind."
-        echo "brew install valgrind"
-        brew install valgrind; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
-        echo "The valgrind is installed."
+
+    if [[ $SRS_VALGRIND == YES ]]; then
+        valgrind --help >/dev/null 2>&1; ret=$?; if [[ 0 -ne $ret ]]; then
+            echo "Installing valgrind."
+            echo "brew install valgrind"
+            brew install valgrind; ret=$?; if [[ 0 -ne $ret ]]; then return $ret; fi
+            echo "The valgrind is installed."
+        fi
     fi
 
     if [ $SRS_NGINX = YES ]; then
@@ -422,10 +446,13 @@ fi
 #####################################################################################
 if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
     # check the cross build flag file, if flag changed, need to rebuild the st.
-    _ST_MAKE=linux-debug && _ST_EXTRA_CFLAGS="-DMD_HAVE_EPOLL -DMD_VALGRIND"
+    _ST_MAKE=linux-debug && _ST_EXTRA_CFLAGS="-DMD_HAVE_EPOLL"
     # for osx, use darwin for st, donot use epoll.
     if [ $OS_IS_OSX = YES ]; then
-        _ST_MAKE=darwin-debug && _ST_EXTRA_CFLAGS="-DMD_HAVE_KQUEUE -DMD_VALGRIND -I/usr/local/include"
+        _ST_MAKE=darwin-debug && _ST_EXTRA_CFLAGS="-DMD_HAVE_KQUEUE -I/usr/local/include"
+    fi
+    if [[ $SRS_VALGRIND == YES ]]; then
+        _ST_EXTRA_CFLAGS="$_ST_EXTRA_CFLAGS -DMD_VALGRIND"
     fi
     # Patched ST from https://github.com/ossrs/state-threads/tree/srs
     if [ $SRS_CROSS_BUILD = YES ]; then
@@ -464,20 +491,12 @@ if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
 fi
 
 #####################################################################################
-# http-parser-2.1
-#####################################################################################
-# check the cross build flag file, if flag changed, need to rebuild the st.
-if [ $SRS_HTTP_CORE = YES ]; then
-    echo "The http-parser is copied into srs_http_stack.*pp"
-fi
-
-#####################################################################################
 # nginx for HLS, nginx-1.5.0
 #####################################################################################
 function write_nginx_html5()
 {
     cat<<END > ${html_file}
-<video "autoplay" "controls" "autobuffer" type="application/vnd.apple.mpegurl"
+<video autoplay controls autobuffer type="application/vnd.apple.mpegurl"
     src="${hls_stream}">
 </video>
 END
@@ -543,7 +562,7 @@ fi
 #####################################################################################
 # cherrypy for http hooks callback, CherryPy-3.2.4
 #####################################################################################
-if [ $SRS_HTTP_CALLBACK = YES ]; then
+if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
     if [[ -f ${SRS_OBJS}/CherryPy-3.2.4/setup.py ]]; then
         echo "CherryPy-3.2.4 is ok.";
     else
@@ -558,9 +577,7 @@ if [ $SRS_HTTP_CALLBACK = YES ]; then
     # check status
     ret=$?; if [[ $ret -ne 0 ]]; then echo "build CherryPy-3.2.4 failed, ret=$ret"; exit $ret; fi
     if [ ! -f ${SRS_OBJS}/CherryPy-3.2.4/setup.py ]; then echo "build CherryPy-3.2.4 failed."; exit -1; fi
-fi
 
-if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
     echo "Link players to cherrypy static-dir"
     rm -rf research/api-server/static-dir/players &&
     ln -sf `pwd`/research/players research/api-server/static-dir/players &&
@@ -583,13 +600,11 @@ if [ $__SRS_BUILD_NGINX = YES ]; then
     rm -f ${SRS_OBJS}/nginx/html/index.html &&
     ln -sf `pwd`/research/players/nginx_index.html ${SRS_OBJS}/nginx/html/index.html
 fi
-# if http-server enalbed, use srs embeded http-server
-if [ $SRS_HTTP_SERVER = YES ]; then
+if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
+    # if http-server enalbed, use srs embeded http-server
     rm -f ${SRS_OBJS}/nginx/html/index.html &&
     ln -sf `pwd`/research/players/srs-http-server_index.html ${SRS_OBJS}/nginx/html/index.html
-fi
-# if api-server enabled, generate for api server.
-if [ $SRS_HTTP_CALLBACK = YES ]; then
+    # if api-server enabled, generate for api server.
     rm -f ${SRS_OBJS}/nginx/html/index.html &&
     ln -sf `pwd`/research/players/api-server_index.html ${SRS_OBJS}/nginx/html/index.html
 fi
@@ -607,7 +622,7 @@ if [ $SRS_OSX = YES ]; then
 fi
 OPENSSL_HOTFIX="-DOPENSSL_NO_HEARTBEATS"
 # @see http://www.openssl.org/news/secadv/20140407.txt
-# Affected users should upgrade to OpenSSL 1.0.1g. Users unable to immediately
+# Affected users should upgrade to OpenSSL 1.1.0e. Users unable to immediately
 # upgrade can alternatively recompile OpenSSL with -DOPENSSL_NO_HEARTBEATS.
 if [ $SRS_SSL = YES ]; then
     if [ $SRS_USE_SYS_SSL = YES ]; then
@@ -617,50 +632,50 @@ if [ $SRS_SSL = YES ]; then
         if [ $SRS_CROSS_BUILD = YES ]; then
             # ok, arm specified, if the flag filed does not exists, need to rebuild.
             if [[ -f ${SRS_OBJS}/_flag.ssl.cross.build.tmp && -f ${SRS_OBJS}/openssl/lib/libssl.a ]]; then
-                echo "The openssl-1.0.1f for arm is ok.";
+                echo "The openssl-1.1.0e for arm is ok.";
             else
-                echo "Building openssl-1.0.1f for ARM.";
+                echo "Building openssl-1.1.0e for ARM.";
                 (
-                    rm -rf ${SRS_OBJS}/openssl-1.0.1f && cd ${SRS_OBJS} && 
-                    unzip -q ../3rdparty/openssl-1.0.1f.zip && cd openssl-1.0.1f && 
-                    $CONFIGURE_TOOL --prefix=`pwd`/_release -no-shared no-asm $OPENSSL_HOTFIX &&
+                    rm -rf ${SRS_OBJS}/openssl-1.1.0e && cd ${SRS_OBJS} &&
+                    unzip -q ../3rdparty/openssl-1.1.0e.zip && cd openssl-1.1.0e &&
+                    $CONFIGURE_TOOL --prefix=`pwd`/_release -no-shared no-asm no-threads $OPENSSL_HOTFIX &&
                     make CC=${SrsArmCC} GCC=${SrsArmGCC} AR="${SrsArmAR} r" \
                         LD=${SrsArmLD} LINK=${SrsArmGCC} RANDLIB=${SrsArmRANDLIB} && 
                     make install_sw &&
-                    cd .. && rm -rf openssl && ln -sf openssl-1.0.1f/_release openssl &&
+                    cd .. && rm -rf openssl && ln -sf openssl-1.1.0e/_release openssl &&
                     cd .. && touch ${SRS_OBJS}/_flag.ssl.cross.build.tmp
                 )
             fi
         else
             # cross build not specified, if exists flag, need to rebuild for no-arm platform.
             if [[ ! -f ${SRS_OBJS}/_flag.ssl.cross.build.tmp && -f ${SRS_OBJS}/openssl/lib/libssl.a ]]; then
-                echo "Openssl-1.0.1f is ok.";
+                echo "Openssl-1.1.0e is ok.";
             else
-                echo "Building openssl-1.0.1f.";
+                echo "Building openssl-1.1.0e.";
                 (
-                    rm -rf ${SRS_OBJS}/openssl-1.0.1f && cd ${SRS_OBJS} && 
-                    unzip -q ../3rdparty/openssl-1.0.1f.zip && cd openssl-1.0.1f && 
-                    $CONFIGURE_TOOL --prefix=`pwd`/_release -no-shared $OPENSSL_HOTFIX &&
+                    rm -rf ${SRS_OBJS}/openssl-1.1.0e && cd ${SRS_OBJS} &&
+                    unzip -q ../3rdparty/openssl-1.1.0e.zip && cd openssl-1.1.0e &&
+                    $CONFIGURE_TOOL --prefix=`pwd`/_release -no-shared no-threads $OPENSSL_HOTFIX &&
                     make && make install_sw &&
-                    cd .. && rm -rf openssl && ln -sf openssl-1.0.1f/_release openssl &&
+                    cd .. && rm -rf openssl && ln -sf openssl-1.1.0e/_release openssl &&
                     cd .. && rm -f ${SRS_OBJS}/_flag.ssl.cross.build.tmp
                 )
             fi
         fi
         # check status
-        ret=$?; if [[ $ret -ne 0 ]]; then echo "Build openssl-1.0.1f failed, ret=$ret"; exit $ret; fi
-        if [ ! -f ${SRS_OBJS}/openssl/lib/libssl.a ]; then echo "Build openssl-1.0.1f failed."; exit -1; fi
+        ret=$?; if [[ $ret -ne 0 ]]; then echo "Build openssl-1.1.0e failed, ret=$ret"; exit $ret; fi
+        if [ ! -f ${SRS_OBJS}/openssl/lib/libssl.a ]; then echo "Build openssl-1.1.0e failed."; exit -1; fi
     fi
 fi
 
 #####################################################################################
-# live transcoding, ffmpeg-2.1, x264-core138, lame-3.99.5, libaacplus-2.0.2.
+# live transcoding, ffmpeg-3.2.4, x264-core138, lame-3.99.5, libaacplus-2.0.2.
 #####################################################################################
 if [ $SRS_FFMPEG_TOOL = YES ]; then
     if [[ -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]]; then
-        echo "The ffmpeg-2.1 is ok.";
+        echo "ffmpeg-3.2.4 is ok.";
     else
-        echo "Building ffmpeg-2.1.";
+        echo "build ffmpeg-3.2.4";
         (
             cd ${SRS_OBJS} && pwd_dir=`pwd` && 
             rm -rf ffmepg.src && mkdir -p ffmpeg.src && cd ffmpeg.src &&
@@ -669,8 +684,8 @@ if [ $SRS_FFMPEG_TOOL = YES ]; then
         )
     fi
     # check status
-    ret=$?; if [[ $ret -ne 0 ]]; then echo "Build ffmpeg-2.1 failed, ret=$ret"; exit $ret; fi
-    if [ ! -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]; then echo "Build ffmpeg-2.1 failed."; exit -1; fi
+    ret=$?; if [[ $ret -ne 0 ]]; then echo "build ffmpeg-3.2.4 failed, ret=$ret"; exit $ret; fi
+    if [ ! -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]; then echo "build ffmpeg-3.2.4 failed."; exit -1; fi
 fi
 
 #####################################################################################

@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2017 SRS(ossrs)
+Copyright (c) 2013-2017 OSSRS(winlin)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -78,7 +78,7 @@ int MockSrsConfig::parse(string buf)
         return ret;
     }
 
-    return check_config();
+    return check_normal_config();
 }
 
 #ifdef ENABLE_UTEST_CONFIG
@@ -826,39 +826,6 @@ VOID TEST(ConfigMainTest, CheckConf_srs_log_file)
     if (true) {
         MockSrsConfig conf;
         EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"srs_log_files ./objs/srs.log;"));
-    }
-}
-
-VOID TEST(ConfigMainTest, CheckConf_max_connections)
-{
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS == conf.parse(_MIN_OK_CONF"max_connections 1000;"));
-    }
-    
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"max_connectionss 1000;"));
-    }
-    
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"max_connections 0;"));
-    }
-    
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"max_connections 1000000;"));
-    }
-    
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"max_connections -1;"));
-    }
-    
-    if (true) {
-        MockSrsConfig conf;
-        EXPECT_TRUE(ERROR_SUCCESS != conf.parse(_MIN_OK_CONF"max_connections -1024;"));
     }
 }
 

@@ -1,25 +1,25 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <srs_core.hpp>
 
@@ -31,10 +31,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 using namespace std;
 
 #ifdef SRS_AUTO_GPERF_MP
-    #include <gperftools/heap-profiler.h>
+#include <gperftools/heap-profiler.h>
 #endif
 #ifdef SRS_AUTO_GPERF_CP
-    #include <gperftools/profiler.h>
+#include <gperftools/profiler.h>
 #endif
 
 using namespace std;
@@ -64,7 +64,7 @@ SrsConfig* _srs_config = new SrsConfig();
 extern const char* _srs_version;
 
 /**
-* main entrance.
+ * main entrance.
  */
 int main(int argc, char** argv)
 {
@@ -117,14 +117,14 @@ int main(int argc, char** argv)
     }
     
     // config already applied to log.
-    srs_trace(RTMP_SIG_SRS_SERVER", stable is "RTMP_SIG_SRS_PRIMARY);
-    srs_trace("license: "RTMP_SIG_SRS_LICENSE", "RTMP_SIG_SRS_COPYRIGHT);
-    srs_trace("authors: "RTMP_SIG_SRS_AUTHROS);
-    srs_trace("contributors: "SRS_AUTO_CONSTRIBUTORS);
+    srs_trace(RTMP_SIG_SRS_SERVER ", stable is " RTMP_SIG_SRS_PRIMARY);
+    srs_trace("license: " RTMP_SIG_SRS_LICENSE ", " RTMP_SIG_SRS_COPYRIGHT);
+    srs_trace("authors: " RTMP_SIG_SRS_AUTHROS);
+    srs_trace("contributors: " SRS_AUTO_CONSTRIBUTORS);
     srs_trace("build: %s, configure:%s, uname: %s", SRS_AUTO_BUILD_DATE, SRS_AUTO_USER_CONFIGURE, SRS_AUTO_UNAME);
-    srs_trace("configure detail: "SRS_AUTO_CONFIGURE);
+    srs_trace("configure detail: " SRS_AUTO_CONFIGURE);
 #ifdef SRS_AUTO_EMBEDED_TOOL_CHAIN
-    srs_trace("crossbuild tool chain: "SRS_AUTO_EMBEDED_TOOL_CHAIN);
+    srs_trace("crossbuild tool chain: " SRS_AUTO_EMBEDED_TOOL_CHAIN);
 #endif
     srs_trace("cwd=%s, work_dir=%s", _srs_config->cwd().c_str(), cwd.c_str());
     
@@ -164,7 +164,10 @@ int main(int argc, char** argv)
         }
 #endif
         
-        srs_trace(ss.str().c_str());
+        string sss = ss.str();
+        if (!sss.empty()) {
+            srs_trace(sss.c_str());
+        }
     }
     
     // we check the config when the log initialized.
@@ -202,16 +205,17 @@ void show_macro_features()
         
         // rch(rtmp complex handshake)
         ss << ", rch:" << srs_bool2switch(SRS_AUTO_SSL_BOOL);
+        ss << ", dash:" << "on";
         ss << ", hls:" << srs_bool2switch(SRS_AUTO_HLS_BOOL);
         ss << ", hds:" << srs_bool2switch(SRS_AUTO_HDS_BOOL);
         // hc(http callback)
-        ss << ", hc:" << srs_bool2switch(SRS_AUTO_HTTP_CALLBACK_BOOL);
+        ss << ", hc:" << srs_bool2switch(true);
         // ha(http api)
-        ss << ", ha:" << srs_bool2switch(SRS_AUTO_HTTP_API_BOOL);
+        ss << ", ha:" << srs_bool2switch(true);
         // hs(http server)
-        ss << ", hs:" << srs_bool2switch(SRS_AUTO_HTTP_SERVER_BOOL);
+        ss << ", hs:" << srs_bool2switch(true);
         // hp(http parser)
-        ss << ", hp:" << srs_bool2switch(SRS_AUTO_HTTP_CORE_BOOL);
+        ss << ", hp:" << srs_bool2switch(true);
         ss << ", dvr:" << srs_bool2switch(SRS_AUTO_DVR_BOOL);
         // trans(transcode)
         ss << ", trans:" << srs_bool2switch(SRS_AUTO_TRANSCODE_BOOL);
@@ -337,14 +341,9 @@ void show_macro_features()
     srs_warn("srs memory watcher will hurts performance. user should kill by SIGTERM or init.d script.");
 #endif
     
-#if defined(SRS_AUTO_STREAM_CASTER)
-#warning "stream caster is experiment feature."
-    srs_warn("stream caster is experiment feature.");
-#endif
-    
 #if VERSION_MAJOR > VERSION_STABLE
-#warning "current branch is not stable, please use stable branch instead."
-    srs_warn("SRS %s is not stable, please use stable branch %s instead", RTMP_SIG_SRS_VERSION, VERSION_STABLE_BRANCH);
+#warning "Current branch is unstable."
+    srs_warn("Develop is unstable, please use branch: git checkout %s", VERSION_STABLE_BRANCH);
 #endif
     
 #if defined(SRS_PERF_SO_SNDBUF_SIZE) && !defined(SRS_PERF_MW_SO_SNDBUF)
@@ -378,7 +377,7 @@ int run(SrsServer* svr)
         srs_error("create process error. ret=-1"); //ret=0
         return -1;
     }
-
+    
     // grandpa
     if(pid > 0) {
         int status = 0;
@@ -388,7 +387,7 @@ int run(SrsServer* svr)
         srs_trace("grandpa process exit.");
         exit(0);
     }
-
+    
     // father
     pid = fork();
     
@@ -396,12 +395,12 @@ int run(SrsServer* svr)
         srs_error("create process error. ret=0");
         return -1;
     }
-
+    
     if(pid > 0) {
         srs_trace("father process exit. ret=0");
         exit(0);
     }
-
+    
     // son
     srs_trace("son(deamon) process running.");
     
@@ -415,7 +414,7 @@ int run_master(SrsServer* svr)
     if ((ret = svr->initialize_st()) != ERROR_SUCCESS) {
         return ret;
     }
-
+    
     if ((ret = svr->initialize_signal()) != ERROR_SUCCESS) {
         return ret;
     }

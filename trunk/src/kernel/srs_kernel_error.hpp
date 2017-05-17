@@ -1,32 +1,28 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #ifndef SRS_KERNEL_ERROR_HPP
 #define SRS_KERNEL_ERROR_HPP
-
-/*
-#include <srs_kernel_error.hpp>
-*/
 
 #include <srs_core.hpp>
 
@@ -104,6 +100,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ERROR_SYSTEM_CONFIG_RAW_PARAMS      1063
 #define ERROR_SYSTEM_FILE_NOT_EXISTS        1064
 #define ERROR_SYSTEM_HOURGLASS_RESOLUTION   1065
+#define ERROR_SYSTEM_DNS_RESOLVE            1066
+#define ERROR_SYSTEM_FRAGMENT_UNLINK        1067
+#define ERROR_SYSTEM_FRAGMENT_RENAME        1068
 
 ///////////////////////////////////////////////////////
 // RTMP protocol error.
@@ -158,8 +157,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ERROR_RTSP_AUDIO_CONFIG             2047
 #define ERROR_RTMP_STREAM_NOT_FOUND         2048
 #define ERROR_RTMP_CLIENT_NOT_FOUND         2049
+#define ERROR_OpenSslCreateHMAC             2050
+#define ERROR_RTMP_STREAM_NAME_EMPTY        2051
 //                                           
-// system control message, 
+// system control message,
 // not an error, but special control logic.
 //
 // connection is redirect to another server.
@@ -240,6 +241,27 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ERROR_RESPONSE_DATA                 3065
 #define ERROR_REQUEST_DATA                  3066
 #define ERROR_EDGE_PORT_INVALID             3067
+#define ERROR_EXPECT_FILE_IO                3068
+#define ERROR_MP4_BOX_OVERFLOW              3069
+#define ERROR_MP4_BOX_REQUIRE_SPACE         3070
+#define ERROR_MP4_BOX_ILLEGAL_TYPE          3071
+#define ERROR_MP4_BOX_ILLEGAL_SCHEMA        3072
+#define ERROR_MP4_BOX_STRING                3073
+#define ERROR_MP4_BOX_ILLEGAL_BRAND         3074
+#define ERROR_MP4_ESDS_SL_Config            3075
+#define ERROR_MP4_ILLEGAL_MOOV              3076
+#define ERROR_MP4_ILLEGAL_HANDLER           3077
+#define ERROR_MP4_ILLEGAL_TRACK             3078
+#define ERROR_MP4_MOOV_OVERFLOW             3079
+#define ERROR_MP4_ILLEGAL_SAMPLES           3080
+#define ERROR_MP4_ILLEGAL_TIMESTAMP         3081
+#define ERROR_DVR_CANNOT_APPEND             3082
+#define ERROR_DVR_ILLEGAL_PLAN              3083
+#define ERROR_FLV_REQUIRE_SPACE             3084
+#define ERROR_MP4_AVCC_CHANGE               3085
+#define ERROR_MP4_ASC_CHANGE                3086
+#define ERROR_DASH_WRITE_FAILED             3087
+#define ERROR_TS_CONTEXT_NOT_READY          3088
 
 ///////////////////////////////////////////////////////
 // HTTP/StreamCaster/KAFKA protocol error.
@@ -298,24 +320,24 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ERROR_USER_END                      9999
 
 /**
-* whether the error code is an system control error.
-*/
+ * whether the error code is an system control error.
+ */
 extern bool srs_is_system_control_error(int error_code);
 extern bool srs_is_client_gracefully_close(int error_code);
 
 /**
-@remark: use column copy to generate the new error codes.
-01234567890
-01234567891
-01234567892
-01234567893
-01234567894
-01234567895
-01234567896
-01234567897
-01234567898
-01234567899
-*/
+ @remark: use column copy to generate the new error codes.
+ 01234567890
+ 01234567891
+ 01234567892
+ 01234567893
+ 01234567894
+ 01234567895
+ 01234567896
+ 01234567897
+ 01234567898
+ 01234567899
+ */
 
 #endif
 

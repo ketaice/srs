@@ -1,28 +1,25 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2016 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
 /**
-gcc srs_detect_rtmp.c ../../objs/lib/srs_librtmp.a -g -O0 -lstdc++ -o srs_detect_rtmp
-*/
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,40 +48,40 @@ int main(int argc, char** argv)
     int size;
     char type;
     char* data;
-    u_int32_t timestamp;
-    u_int32_t basetime = 0;
+    uint32_t timestamp;
+    uint32_t basetime = 0;
     
     // user options
     const char* rtmp_url = NULL;
     int duration = 0;
     int timeout = 0;
     enum srs_url_schema sus;
-
+    
     printf("detect rtmp stream\n");
     printf("srs(ossrs) client librtmp library.\n");
     printf("version: %d.%d.%d\n", srs_version_major(), srs_version_minor(), srs_version_revision());
     
     if (argc <= 3) {
         printf("detect stream on RTMP server, print result to stderr.\n"
-            "Usage: %s <rtmp_url> <duration> <timeout> [url_schema]\n"
-            "   rtmp_url     RTMP stream url to play\n"
-            "   duration     how long to play, in seconds, stream time.\n"
-            "   timeout      how long to timeout, in seconds, system time.\n"
-            "   url_schema   the schema of url, default to vis, can be:\n"
-            "                    normal:    rtmp://vhost:port/app/stream\n"
-            "                    via   :    rtmp://ip:port/vhost/app/stream\n"
-            "                    vis   :    rtmp://ip:port/app/stream?vhost=xxx\n"
-            "                    vis2  :    rtmp://ip:port/app/stream?domain=xxx\n"
-            "For example:\n"
-            "   %s rtmp://127.0.0.1:1935/bravo.chnvideo.com/live/livestream 3 10\n",
-            argv[0], argv[0]);
+               "Usage: %s <rtmp_url> <duration> <timeout> [url_schema]\n"
+               "   rtmp_url     RTMP stream url to play\n"
+               "   duration     how long to play, in seconds, stream time.\n"
+               "   timeout      how long to timeout, in seconds, system time.\n"
+               "   url_schema   the schema of url, default to vis, can be:\n"
+               "                    normal:    rtmp://vhost:port/app/stream\n"
+               "                    via   :    rtmp://ip:port/vhost/app/stream\n"
+               "                    vis   :    rtmp://ip:port/app/stream?vhost=xxx\n"
+               "                    vis2  :    rtmp://ip:port/app/stream?domain=xxx\n"
+               "For example:\n"
+               "   %s rtmp://127.0.0.1:1935/bravo.chnvideo.com/live/livestream 3 10\n",
+               argv[0], argv[0]);
         exit(-1);
     }
     
     rtmp_url = argv[1];
     duration = atoi(argv[2]);
     timeout = atoi(argv[3]);
-
+    
     if (1) {
         char *p = "vis";
         if (argc > 4) {
@@ -105,7 +102,7 @@ int main(int argc, char** argv)
         }
         srs_human_trace("url schema: %s", p);
     }
-
+    
     srs_human_trace("rtmp url: %s", rtmp_url);
     srs_human_trace("duration: %ds, timeout:%ds", duration, timeout);
     
@@ -143,8 +140,13 @@ int main(int argc, char** argv)
         goto rtmp_destroy;
     }
     srs_human_trace("do simple handshake success");
-
-    if ((ret = srs_rtmp_connect_app3(rtmp, sus)) != 0) {
+    
+    if ((ret = srs_rtmp_set_schema(rtmp, sus)) != 0) {
+        srs_human_trace("set url schema=%d failed, ret=%d", sus, ret);
+        goto rtmp_destroy;
+    }
+    
+    if ((ret = srs_rtmp_connect_app(rtmp)) != 0) {
         srs_human_trace("connect vhost/app failed. ret=%d", ret);
         goto rtmp_destroy;
     }
@@ -162,8 +164,7 @@ int main(int argc, char** argv)
             srs_human_trace("read packet failed. ret=%d", ret);
             goto rtmp_destroy;
         }
-        srs_human_trace("got packet: type=%s, time=%d, size=%d", 
-            srs_human_flv_tag_type2string(type), timestamp, size);
+        srs_human_trace("got packet: type=%s, time=%d, size=%d", srs_human_flv_tag_type2string(type), timestamp, size);
         
         if (SRS_RTMP_TYPE_VIDEO == type || SRS_RTMP_TYPE_AUDIO == type) {
             if (time_first_packet <= 0) {
@@ -229,7 +230,7 @@ rtmp_destroy:
         "\"remark0\": \"total = dns + tcp_connect + start_play + first_packet + last_packet\"",
         "\"remark1\": \"delay = stream - (time_cleanup - time_first_packet)\"",
         "\"remark2\": \"if code is not 0, user must ignore all data\""
-    );
+        );
     
     srs_human_trace(" ");
     srs_human_trace("completed");

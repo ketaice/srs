@@ -23,6 +23,7 @@ SrsGperfMDSummaryColor="\${GREEN}(Disabled) "; if [ $SRS_GPERF_MD = YES ]; then 
 SrsGperfMPSummaryColor="\${GREEN}(Disabled) "; if [ $SRS_GPERF_MP = YES ]; then SrsGperfMPSummaryColor="\${YELLOW}"; fi
 SrsGperfCPSummaryColor="\${GREEN}(Disabled) "; if [ $SRS_GPERF_CP = YES ]; then SrsGperfCPSummaryColor="\${YELLOW}"; fi
 SrsGprofSummaryColor="\${GREEN}(Disabled) "; if [ $SRS_GPROF = YES ]; then SrsGprofSummaryColor="\${YELLOW}"; fi
+SrsValgrindSummaryColor="\${YELLOW}(Disabled) "; if [ $SRS_VALGRIND = YES ]; then SrsValgrindSummaryColor="\${GREEN}"; fi
 
 if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
     cat <<END > ${SRS_OBJS}/${SRS_BUILD_SUMMARY}
@@ -37,22 +38,23 @@ BLACK="\\${BLACK}"
 
 echo -e "\${GREEN}The build summary:\${BLACK}"
 echo -e "     \${BLACK}+------------------------------------------------------------------------------------\${BLACK}"
-echo -e "     \${GREEN}For SRS benchmark, recomment the following tools:\${BLACK}"
-echo -e "     \${GREEN}     About gperf, gprof and valgrind, please read http://blog.csdn.net/win_lin/article/details/53503869\${BLACK}"
+echo -e "     \${GREEN}For SRS benchmark, gperf, gprof and valgrind, please read:\${BLACK}"
+echo -e "     \${GREEN}     http://blog.csdn.net/win_lin/article/details/53503869\${BLACK}"
 echo -e "     \${BLACK}+------------------------------------------------------------------------------------\${BLACK}"
 echo -e "     |\${GREEN}The main server usage: ./objs/srs -c conf/srs.conf, start the srs server\${BLACK}"
 echo -e "     |     ${SrsHlsSummaryColor}About HLS, please read https://github.com/ossrs/srs/wiki/v2_CN_DeliveryHLS\${BLACK}"
-echo -e "     |     ${SrsDvrSummaryColor}About DVR, please read https://github.com/ossrs/srs/wiki/v2_CN_DVR\${BLACK}"
+echo -e "     |     ${SrsDvrSummaryColor}About DVR, please read https://github.com/ossrs/srs/wiki/v3_CN_DVR\${BLACK}"
 echo -e "     |     ${SrsNginxSummaryColor}About NGINX, please read https://github.com/ossrs/srs/wiki/v2_CN_DeliveryHLS\${BLACK}"
 echo -e "     |     ${SrsSslSummaryColor}About SSL, please read https://github.com/ossrs/srs/wiki/v1_CN_RTMPHandshake\${BLACK}"
-echo -e "     |     ${SrsFfmpegSummaryColor}About FFMPEG, please read https://github.com/ossrs/srs/wiki/v1_CN_FFMPEG\${BLACK}"
-echo -e "     |     ${SrsTranscodeSummaryColor}About transcoding, please read https://github.com/ossrs/srs/wiki/v1_CN_FFMPEG\${BLACK}"
+echo -e "     |     ${SrsFfmpegSummaryColor}About FFMPEG, please read https://github.com/ossrs/srs/wiki/v3_CN_FFMPEG\${BLACK}"
+echo -e "     |     ${SrsTranscodeSummaryColor}About transcoding, please read https://github.com/ossrs/srs/wiki/v3_CN_FFMPEG\${BLACK}"
 echo -e "     |     ${SrsIngestSummaryColor}About ingester, please read https://github.com/ossrs/srs/wiki/v1_CN_Ingest\${BLACK}"
-echo -e "     |     ${SrsHttpCallbackSummaryColor}About http-callback, please read https://github.com/ossrs/srs/wiki/v2_CN_HTTPCallback\${BLACK}"
+echo -e "     |     ${SrsHttpCallbackSummaryColor}About http-callback, please read https://github.com/ossrs/srs/wiki/v3_CN_HTTPCallback\${BLACK}"
 echo -e "     |     ${SrsHttpServerSummaryColor}Aoubt embeded http-server, please read https://github.com/ossrs/srs/wiki/v2_CN_HTTPServer\${BLACK}"
-echo -e "     |     ${SrsHttpApiSummaryColor}About http-api, please read https://github.com/ossrs/srs/wiki/v2_CN_HTTPApi\${BLACK}"
+echo -e "     |     ${SrsHttpApiSummaryColor}About http-api, please read https://github.com/ossrs/srs/wiki/v3_CN_HTTPApi\${BLACK}"
 echo -e "     |     ${SrsStreamCasterSummaryColor}About stream-caster, please read https://github.com/ossrs/srs/wiki/v2_CN_Streamer\${BLACK}"
 echo -e "     |     ${SrsKafkaSummaryColor}About kafka, please read https://github.com/ossrs/srs/wiki/v3_CN_Kafka\${BLACK}"
+echo -e "     |     ${SrsValgrindSummaryColor}About VALGRIND, please read https://github.com/ossrs/state-threads/issues/2\${BLACK}"
 echo -e "     \${BLACK}+------------------------------------------------------------------------------------\${BLACK}"
 echo -e "\${GREEN}binaries, please read https://github.com/ossrs/srs/wiki/v2_CN_Build\${BLACK}"
 

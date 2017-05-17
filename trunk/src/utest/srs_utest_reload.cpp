@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2017 SRS(ossrs)
+Copyright (c) 2013-2017 OSSRS(winlin)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -69,7 +69,7 @@ int MockReloadHandler::count_total()
 
 int MockReloadHandler::count_true()
 {
-    int count_true  = 0;
+    int count_true = 0;
     
     if (listen_reloaded) count_true++;
     if (pid_reloaded) count_true++;
@@ -99,7 +99,7 @@ int MockReloadHandler::count_true()
 
 int MockReloadHandler::count_false()
 {
-    int count_false  = 0;
+    int count_false = 0;
     
     if (!listen_reloaded) count_false++;
     if (!pid_reloaded) count_false++;

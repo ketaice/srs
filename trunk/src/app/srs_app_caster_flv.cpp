@@ -1,25 +1,25 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2017 SRS(ossrs)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2013-2017 OSSRS(winlin)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <srs_app_caster_flv.hpp>
 
@@ -43,6 +43,7 @@ using namespace std;
 #include <srs_protocol_amf0.hpp>
 #include <srs_kernel_utility.hpp>
 #include <srs_app_rtmp_conn.hpp>
+#include <srs_protocol_utility.hpp>
 
 #define SRS_HTTP_FLV_STREAM_BUFFER 4096
 
@@ -82,12 +83,19 @@ int SrsAppCasterFlv::on_tcp_client(st_netfd_t stfd)
     return ret;
 }
 
-void SrsAppCasterFlv::remove(SrsConnection* c)
+void SrsAppCasterFlv::remove(ISrsConnection* c)
 {
+    SrsConnection* conn = dynamic_cast<SrsConnection*>(c);
+    
     std::vector<SrsHttpConn*>::iterator it;
-    if ((it = std::find(conns.begin(), conns.end(), c)) != conns.end()) {
+    if ((it = std::find(conns.begin(), conns.end(), conn)) != conns.end()) {
         conns.erase(it);
     }
+    
+    // fixbug: SrsHttpConn for CasterFlv is not freed, which could cause memory leak
+    // so, free conn which is not managed by SrsServer->conns;
+    // @see: https://github.com/ossrs/srs/issues/826
+    srs_freep(c);
 }
 
 int SrsAppCasterFlv::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
@@ -117,9 +125,9 @@ int SrsAppCasterFlv::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 }
 
 SrsDynamicHttpConn::SrsDynamicHttpConn(IConnectionManager* cm, st_netfd_t fd, SrsHttpServeMux* m, string cip)
-    : SrsHttpConn(cm, fd, m, cip)
+: SrsHttpConn(cm, fd, m, cip)
 {
-    sdk = new SrsSimpleRtmpClient();
+    sdk = NULL;
     pprint = SrsPithyPrint::create_caster();
 }
 
@@ -180,10 +188,14 @@ int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
 {
     int ret = ERROR_SUCCESS;
     
-    int64_t cto = SRS_CONSTS_RTMP_TIMEOUT_US;
-    int64_t sto = SRS_CONSTS_RTMP_PULSE_TIMEOUT_US;
-    if ((ret = sdk->connect(output, cto, sto)) != ERROR_SUCCESS) {
-        srs_error("flv: connect %s failed, cto=%"PRId64", sto=%"PRId64". ret=%d", output.c_str(), cto, sto, ret);
+    srs_freep(sdk);
+    
+    int64_t cto = SRS_CONSTS_RTMP_TMMS;
+    int64_t sto = SRS_CONSTS_RTMP_PULSE_TMMS;
+    sdk = new SrsSimpleRtmpClient(output, cto, sto);
+    
+    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+        srs_error("flv: connect %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", output.c_str(), cto, sto, ret);
         return ret;
     }
     
@@ -198,7 +210,7 @@ int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
         
         char type;
         int32_t size;
-        u_int32_t time;
+        uint32_t time;
         if ((ret = dec->read_tag_header(&type, &size, &time)) != ERROR_SUCCESS) {
             if (!srs_is_client_gracefully_close(ret)) {
                 srs_error("flv: proxy tag header failed. ret=%d", ret);
@@ -216,7 +228,7 @@ int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
         }
         
         SrsSharedPtrMessage* msg = NULL;
-        if ((ret = sdk->rtmp_create_msg(type, time, data, size, &msg)) != ERROR_SUCCESS) {
+        if ((ret = srs_rtmp_create_msg(type, time, data, size, sdk->sid(), &msg)) != ERROR_SUCCESS) {
             return ret;
         }
         
@@ -275,7 +287,7 @@ void SrsHttpFileReader::skip(int64_t /*size*/)
 {
 }
 
-int64_t SrsHttpFileReader::lseek(int64_t offset)
+int64_t SrsHttpFileReader::seek2(int64_t offset)
 {
     return offset;
 }
@@ -317,6 +329,12 @@ int SrsHttpFileReader::read(void* buf, size_t count, ssize_t* pnread)
     }
     
     return ret;
+}
+
+int SrsHttpFileReader::lseek(off_t offset, int whence, off_t* seeked)
+{
+    // TODO: FIXME: Use HTTP range for seek.
+    return ERROR_SUCCESS;
 }
 
 #endif
