@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -63,6 +63,10 @@ void srs_vhost_resolve(string& vhost, string& app, string& param)
     app = srs_string_replace(app, "&&", "?");
     app = srs_string_replace(app, "=", "?");
     
+    if (srs_string_ends_with(app, "/_definst_")) {
+        app = srs_erase_last_substr(app, "/_definst_");
+    }
+    
     if ((pos = app.find("?")) != std::string::npos) {
         std::string query = app.substr(pos + 1);
         app = app.substr(0, pos);
@@ -81,11 +85,8 @@ void srs_vhost_resolve(string& vhost, string& app, string& param)
     /* others */
 }
 
-void srs_discovery_tc_url(
-                          string tcUrl,
-                          string& schema, string& host, string& vhost,
-                          string& app, int& port, string& param
-                          ) {
+void srs_discovery_tc_url(string tcUrl, string& schema, string& host, string& vhost, string& app, string& stream, int& port, string& param)
+{
     size_t pos = std::string::npos;
     std::string url = tcUrl;
     
@@ -115,6 +116,12 @@ void srs_discovery_tc_url(
     
     vhost = host;
     srs_vhost_resolve(vhost, app, param);
+    srs_vhost_resolve(vhost, stream, param);
+    
+    // Ignore when the param only contains the default vhost.
+    if (param == "?vhost="SRS_CONSTS_RTMP_DEFAULT_VHOST) {
+        param = "";
+    }
 }
 
 void srs_parse_query_string(string q, map<string,string>& query)
@@ -153,49 +160,65 @@ void srs_random_generate(char* bytes, int size)
     }
 }
 
-string srs_generate_tc_url(string ip, string vhost, string app, int port, string param)
+string srs_generate_tc_url(string host, string vhost, string app, int port)
 {
     string tcUrl = "rtmp://";
     
     if (vhost == SRS_CONSTS_RTMP_DEFAULT_VHOST) {
-        tcUrl += ip;
+        tcUrl += host;
     } else {
         tcUrl += vhost;
     }
     
     if (port != SRS_CONSTS_RTMP_DEFAULT_PORT) {
-        tcUrl += ":";
-        tcUrl += srs_int2str(port);
+        tcUrl += ":" + srs_int2str(port);
     }
     
-    tcUrl += "/";
-    tcUrl += app;
-    if (!param.empty()) {
-        tcUrl += "?" + param;
-    }
+    tcUrl += "/" + app;
     
     return tcUrl;
 }
 
-string srs_generate_normal_tc_url(string ip, string vhost, string app, int port, string param)
+string srs_generate_stream_with_query(string host, string vhost, string stream, string param)
 {
-    return "rtmp://" + vhost + ":" + srs_int2str(port) + "/" + app + (param.empty() ? "" : "?" + param);
-}
-
-string srs_generate_via_tc_url(string ip, string vhost, string app, int port, string param)
-{
-    return "rtmp://" + ip + ":" + srs_int2str(port) + "/" + vhost + "/" + app + (param.empty() ? "" : "?" + param);
-}
-
-string srs_generate_vis_tc_url(string ip, string vhost, string app, int port, string param)
-{
-    return "rtmp://" + ip + ":" + srs_int2str(port) + "/" + app + (param.empty() ? "" : "?" + param);
+    string url = stream;
+    string query = param;
+    
+    // If no vhost in param, try to append one.
+    string guessVhost;
+    if (query.find("vhost=") == string::npos) {
+        if (vhost != SRS_CONSTS_RTMP_DEFAULT_VHOST) {
+            guessVhost = vhost;
+        } else if (!srs_is_ipv4(host)) {
+            guessVhost = host;
+        }
+    }
+    
+    // Well, if vhost exists, always append in query string.
+    if (!guessVhost.empty()) {
+        query += "&vhost=" + guessVhost;
+    }
+    
+    // Remove the start & when param is empty.
+    srs_string_trim_start(query, "&");
+    
+    // Prefix query with ?.
+    if (!srs_string_starts_with(query, "?")) {
+        url += "?";
+    }
+    
+    // Append query to url.
+    if (!query.empty()) {
+        url += query;
+    }
+    
+    return url;
 }
 
 template<typename T>
-int srs_do_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, T** ppmsg)
+srs_error_t srs_do_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, T** ppmsg)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     *ppmsg = NULL;
     T* msg = NULL;
@@ -205,63 +228,61 @@ int srs_do_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, 
         header.initialize_audio(size, timestamp, stream_id);
         
         msg = new T();
-        if ((ret = msg->create(&header, data, size)) != ERROR_SUCCESS) {
+        if ((err = msg->create(&header, data, size)) != srs_success) {
             srs_freep(msg);
-            return ret;
+            return srs_error_wrap(err, "create message");
         }
     } else if (type == SrsFrameTypeVideo) {
         SrsMessageHeader header;
         header.initialize_video(size, timestamp, stream_id);
         
         msg = new T();
-        if ((ret = msg->create(&header, data, size)) != ERROR_SUCCESS) {
+        if ((err = msg->create(&header, data, size)) != srs_success) {
             srs_freep(msg);
-            return ret;
+            return srs_error_wrap(err, "create message");
         }
     } else if (type == SrsFrameTypeScript) {
         SrsMessageHeader header;
         header.initialize_amf0_script(size, stream_id);
         
         msg = new T();
-        if ((ret = msg->create(&header, data, size)) != ERROR_SUCCESS) {
+        if ((err = msg->create(&header, data, size)) != srs_success) {
             srs_freep(msg);
-            return ret;
+            return srs_error_wrap(err, "create message");
         }
     } else {
-        ret = ERROR_STREAM_CASTER_FLV_TAG;
-        srs_error("rtmp unknown tag type=%#x. ret=%d", type, ret);
-        return ret;
+        return srs_error_new(ERROR_STREAM_CASTER_FLV_TAG, "unknown tag=%#x", (uint8_t)type);
     }
     
     *ppmsg = msg;
     
-    return ret;
+    return err;
 }
 
-int srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsSharedPtrMessage** ppmsg)
+srs_error_t srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsSharedPtrMessage** ppmsg)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // only when failed, we must free the data.
-    if ((ret = srs_do_rtmp_create_msg(type, timestamp, data, size, stream_id, ppmsg)) != ERROR_SUCCESS) {
+    if ((err = srs_do_rtmp_create_msg(type, timestamp, data, size, stream_id, ppmsg)) != srs_success) {
         srs_freepa(data);
-        return ret;
+        return srs_error_wrap(err, "create message");
     }
     
-    return ret;
+    return err;
 }
 
-int srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsCommonMessage** ppmsg)
+srs_error_t srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsCommonMessage** ppmsg)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // only when failed, we must free the data.
-    if ((ret = srs_do_rtmp_create_msg(type, timestamp, data, size, stream_id, ppmsg)) != ERROR_SUCCESS) {
+    if ((err = srs_do_rtmp_create_msg(type, timestamp, data, size, stream_id, ppmsg)) != srs_success) {
         srs_freepa(data);
-        return ret;
+        return srs_error_wrap(err, "create message");
     }
     
-    return ret;
+    return err;
 }
 
 string srs_generate_stream_url(string vhost, string app, string stream)
@@ -291,27 +312,17 @@ void srs_parse_rtmp_url(string url, string& tcUrl, string& stream)
     }
 }
 
-string srs_generate_rtmp_url(string server, int port, string vhost, string app, string stream)
+string srs_generate_rtmp_url(string server, int port, string host, string vhost, string app, string stream, string param)
 {
-    std::stringstream ss;
-    
-    ss << "rtmp://" << server << ":" << std::dec << port << "/" << app;
-    
-    // when default or server is vhost, donot specifies the vhost in params.
-    if (SRS_CONSTS_RTMP_DEFAULT_VHOST != vhost && server != vhost) {
-        ss << "...vhost..." << vhost;
-    }
-    
-    if (!stream.empty()) {
-        ss << "/" << stream;
-    }
-    
-    return ss.str();
+    string tcUrl = "rtmp://" + server + ":" + srs_int2str(port) + "/"  + app;
+    string streamWithQuery = srs_generate_stream_with_query(host, vhost, stream, param);
+    string url = tcUrl + "/" + streamWithQuery;
+    return url;
 }
 
-int srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, ssize_t* pnwrite)
+srs_error_t srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, ssize_t* pnwrite)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // the limits of writev iovs.
     // for srs-librtmp, @see https://github.com/ossrs/srs/issues/213
@@ -324,29 +335,23 @@ int srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, s
     
     // send in a time.
     if (size < limits) {
-        if ((ret = skt->writev(iovs, size, pnwrite)) != ERROR_SUCCESS) {
-            if (!srs_is_client_gracefully_close(ret)) {
-                srs_error("send with writev failed. ret=%d", ret);
-            }
-            return ret;
+        if ((err = skt->writev(iovs, size, pnwrite)) != srs_success) {
+            return srs_error_wrap(err, "writev");
         }
-        return ret;
+        return err;
     }
     
     // send in multiple times.
     int cur_iov = 0;
     while (cur_iov < size) {
         int cur_count = srs_min(limits, size - cur_iov);
-        if ((ret = skt->writev(iovs + cur_iov, cur_count, pnwrite)) != ERROR_SUCCESS) {
-            if (!srs_is_client_gracefully_close(ret)) {
-                srs_error("send with writev failed. ret=%d", ret);
-            }
-            return ret;
+        if ((err = skt->writev(iovs + cur_iov, cur_count, pnwrite)) != srs_success) {
+            return srs_error_wrap(err, "writev");
         }
         cur_iov += cur_count;
     }
     
-    return ret;
+    return err;
 }
 
 string srs_join_vector_string(vector<string>& vs, string separator)

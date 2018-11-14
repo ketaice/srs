@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -235,6 +235,7 @@ public:
     /**
      * check codec h264, keyframe, sequence header
      */
+    // TODO: FIXME: Remove it, use SrsFormat instead.
     static bool sh(char* data, int size);
     /**
      * check codec h264.
@@ -620,9 +621,9 @@ public:
     virtual ~SrsFrame();
 public:
     // Initialize the frame, to parse sampels.
-    virtual int initialize(SrsCodecConfig* c);
+    virtual srs_error_t initialize(SrsCodecConfig* c);
     // Add a sample to frame.
-    virtual int add_sample(char* bytes, int size);
+    virtual srs_error_t add_sample(char* bytes, int size);
 };
 
 /**
@@ -661,7 +662,7 @@ public:
     virtual ~SrsVideoFrame();
 public:
     // Add the sample without ANNEXB or IBMF header, or RAW AAC or MP3 data.
-    virtual int add_sample(char* bytes, int size);
+    virtual srs_error_t add_sample(char* bytes, int size);
 public:
     virtual SrsVideoCodecConfig* vcodec();
 };
@@ -678,7 +679,9 @@ public:
     SrsAudioCodecConfig* acodec;
     SrsVideoFrame* video;
     SrsVideoCodecConfig* vcodec;
-    SrsBuffer* buffer;
+public:
+    char* raw;
+    int nb_raw;
 public:
     // for sequence header, whether parse the h.264 sps.
     // TODO: FIXME: Refine it.
@@ -688,15 +691,15 @@ public:
     virtual ~SrsFormat();
 public:
     // Initialize the format.
-    virtual int initialize();
+    virtual srs_error_t initialize();
     // When got a parsed audio packet.
     // @param data The data in FLV format.
-    virtual int on_audio(int64_t timestamp, char* data, int size);
+    virtual srs_error_t on_audio(int64_t timestamp, char* data, int size);
     // When got a parsed video packet.
     // @param data The data in FLV format.
-    virtual int on_video(int64_t timestamp, char* data, int size);
+    virtual srs_error_t on_video(int64_t timestamp, char* data, int size);
     // When got a audio aac sequence header.
-    virtual int on_aac_sequence_header(char* data, int size);
+    virtual srs_error_t on_aac_sequence_header(char* data, int size);
 public:
     virtual bool is_aac_sequence_header();
     virtual bool is_avc_sequence_header();
@@ -705,28 +708,28 @@ private:
     // The packet is muxed in FLV format, defined in flv specification.
     //          Demux the sps/pps from sequence header.
     //          Demux the samples from NALUs.
-    virtual int video_avc_demux(SrsBuffer* stream, int64_t timestamp);
+    virtual srs_error_t video_avc_demux(SrsBuffer* stream, int64_t timestamp);
 private:
     // Parse the H.264 SPS/PPS.
-    virtual int avc_demux_sps_pps(SrsBuffer* stream);
-    virtual int avc_demux_sps();
-    virtual int avc_demux_sps_rbsp(char* rbsp, int nb_rbsp);
+    virtual srs_error_t avc_demux_sps_pps(SrsBuffer* stream);
+    virtual srs_error_t avc_demux_sps();
+    virtual srs_error_t avc_demux_sps_rbsp(char* rbsp, int nb_rbsp);
 private:
     // Parse the H.264 NALUs.
-    virtual int video_nalu_demux(SrsBuffer* stream);
+    virtual srs_error_t video_nalu_demux(SrsBuffer* stream);
     // Demux the avc NALU in "AnnexB" from ISO_IEC_14496-10-AVC-2003.pdf, page 211.
-    virtual int avc_demux_annexb_format(SrsBuffer* stream);
+    virtual srs_error_t avc_demux_annexb_format(SrsBuffer* stream);
     // Demux the avc NALU in "ISO Base Media File Format" from ISO_IEC_14496-15-AVC-format-2012.pdf, page 20
-    virtual int avc_demux_ibmf_format(SrsBuffer* stream);
+    virtual srs_error_t avc_demux_ibmf_format(SrsBuffer* stream);
 private:
     // Demux the audio packet in AAC codec.
     //          Demux the asc from sequence header.
     //          Demux the sampels from RAW data.
-    virtual int audio_aac_demux(SrsBuffer* stream, int64_t timestamp);
-    virtual int audio_mp3_demux(SrsBuffer* stream, int64_t timestamp);
+    virtual srs_error_t audio_aac_demux(SrsBuffer* stream, int64_t timestamp);
+    virtual srs_error_t audio_mp3_demux(SrsBuffer* stream, int64_t timestamp);
 public:
     // Directly demux the sequence header, without RTMP packet header.
-    virtual int audio_aac_sequence_header_demux(char* data, int size);
+    virtual srs_error_t audio_aac_sequence_header_demux(char* data, int size);
 };
 
 #endif

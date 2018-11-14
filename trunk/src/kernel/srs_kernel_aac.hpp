@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -48,8 +48,6 @@ private:
     int8_t aac_sample_rate;
     int8_t aac_channels;
     bool got_sequence_header;
-private:
-    SrsBuffer* tag_stream;
 public:
     SrsAacTransmuxer();
     virtual ~SrsAacTransmuxer();
@@ -59,13 +57,13 @@ public:
      * @remark user can initialize multiple times to encode multiple aac files.
      * @remark, user must free the fs, aac encoder never close/free it.
      */
-    virtual int initialize(SrsFileWriter* fs);
+    virtual srs_error_t initialize(SrsFileWriter* fs);
 public:
     /**
      * write audio/video packet.
      * @remark assert data is not NULL.
      */
-    virtual int write_audio(int64_t timestamp, char* data, int size);
+    virtual srs_error_t write_audio(int64_t timestamp, char* data, int size);
 };
 
 #endif

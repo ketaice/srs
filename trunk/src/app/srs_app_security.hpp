@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -48,7 +48,7 @@ public:
      * @param ip the ip address of client.
      * @param req the request object of client.
      */
-    virtual int check(SrsRtmpConnType type, std::string ip, SrsRequest* req);
+    virtual srs_error_t check(SrsRtmpConnType type, std::string ip, SrsRequest* req);
 private:
     /**
      * security check the allow,

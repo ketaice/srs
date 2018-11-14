@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2017 OSSRS(winlin)
+Copyright (c) 2013-2018 Winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -44,13 +44,11 @@ MockSrsFileWriter::~MockSrsFileWriter()
     srs_freep(data);
 }
 
-int MockSrsFileWriter::open(string /*file*/)
+srs_error_t MockSrsFileWriter::open(string /*file*/)
 {
-    int ret = ERROR_SUCCESS;
-    
     offset = 0;
     
-    return ret;
+    return srs_success;
 }
 
 void MockSrsFileWriter::close()
@@ -68,10 +66,8 @@ int64_t MockSrsFileWriter::tellg()
     return offset;
 }
 
-int MockSrsFileWriter::write(void* buf, size_t count, ssize_t* pnwrite)
+srs_error_t MockSrsFileWriter::write(void* buf, size_t count, ssize_t* pnwrite)
 {
-    int ret = ERROR_SUCCESS;
-    
     int size = srs_min(MAX_MOCK_DATA_SIZE - offset, (int)count);
     
     memcpy(data + offset, buf, size);
@@ -82,7 +78,7 @@ int MockSrsFileWriter::write(void* buf, size_t count, ssize_t* pnwrite)
     
     offset += size;
     
-    return ret;
+    return srs_success;
 }
 
 void MockSrsFileWriter::mock_reset_offset()
@@ -102,13 +98,11 @@ MockSrsFileReader::~MockSrsFileReader()
     srs_freep(data);
 }
 
-int MockSrsFileReader::open(string /*file*/)
+srs_error_t MockSrsFileReader::open(string /*file*/)
 {
-    int ret = ERROR_SUCCESS;
-    
     offset = 0;
     
-    return ret;
+    return srs_success;
 }
 
 void MockSrsFileReader::close()
@@ -142,14 +136,12 @@ int64_t MockSrsFileReader::filesize()
     return size;
 }
 
-int MockSrsFileReader::read(void* buf, size_t count, ssize_t* pnread)
+srs_error_t MockSrsFileReader::read(void* buf, size_t count, ssize_t* pnread)
 {
-    int ret = ERROR_SUCCESS;
-    
     int s = srs_min(size - offset, (int)count);
     
     if (s <= 0) {
-        return ret;
+        return srs_success;
     }
     
     memcpy(buf, data + offset, s);
@@ -160,13 +152,13 @@ int MockSrsFileReader::read(void* buf, size_t count, ssize_t* pnread)
     
     offset += s;
     
-    return ret;
+    return srs_success;
 }
 
-int MockSrsFileReader::lseek(off_t _offset, int /*whence*/, off_t* /*seeked*/)
+srs_error_t MockSrsFileReader::lseek(off_t _offset, int /*whence*/, off_t* /*seeked*/)
 {
     offset = (int)_offset;
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 void MockSrsFileReader::mock_append_data(const char* _data, int _size)
@@ -192,7 +184,7 @@ MockBufferReader::~MockBufferReader()
 {
 }
 
-int MockBufferReader::read(void* buf, size_t size, ssize_t* nread)
+srs_error_t MockBufferReader::read(void* buf, size_t size, ssize_t* nread)
 {
     int len = srs_min(str.length(), size);
 
@@ -202,7 +194,7 @@ int MockBufferReader::read(void* buf, size_t size, ssize_t* nread)
         *nread = len;
     }
 
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 #ifdef ENABLE_UTEST_KERNEL
@@ -966,55 +958,12 @@ VOID TEST(KernelFlvTest, FlvVSDecoderSeek)
 }
 
 /**
-* test the stream utility, bytes from/to basic types.
-*/
-VOID TEST(KernelStreamTest, StreamInitialize)
-{
-    SrsBuffer s;
-    char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
-    EXPECT_TRUE(ERROR_SUCCESS != s.initialize(NULL, 1024));
-    EXPECT_TRUE(ERROR_SUCCESS != s.initialize(data, 0));
-    EXPECT_TRUE(ERROR_SUCCESS != s.initialize(data, -1));
-}
-
-/**
-* test the stream utility, access data
-*/
-VOID TEST(KernelStreamTest, StreamData)
-{
-    SrsBuffer s;
-    char data[1024];
-    
-    EXPECT_TRUE(s.data() == NULL);
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
-    EXPECT_TRUE(s.data() == data);
-}
-
-/**
-* test the stream utility, access size
-*/
-VOID TEST(KernelStreamTest, StreamSize)
-{
-    SrsBuffer s;
-    char data[1024];
-    
-    EXPECT_TRUE(s.size() == 0);
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
-    EXPECT_TRUE(s.size() == 1024);
-}
-
-/**
 * test the stream utility, access pos
 */
 VOID TEST(KernelStreamTest, StreamPos)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(s.pos() == 0);
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     EXPECT_TRUE(s.pos() == 0);
     
     s.read_bytes(data, 1024);
@@ -1026,11 +975,8 @@ VOID TEST(KernelStreamTest, StreamPos)
 */
 VOID TEST(KernelStreamTest, StreamEmpty)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(s.empty());
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     EXPECT_FALSE(s.empty());
     
     s.read_bytes(data, 1024);
@@ -1042,11 +988,8 @@ VOID TEST(KernelStreamTest, StreamEmpty)
 */
 VOID TEST(KernelStreamTest, StreamRequire)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_FALSE(s.require(1));
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     EXPECT_TRUE(s.require(1));
     EXPECT_TRUE(s.require(1024));
     
@@ -1062,10 +1005,8 @@ VOID TEST(KernelStreamTest, StreamRequire)
 */
 VOID TEST(KernelStreamTest, StreamSkip)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     EXPECT_EQ(0, s.pos());
     
     s.skip(1);
@@ -1080,10 +1021,8 @@ VOID TEST(KernelStreamTest, StreamSkip)
 */
 VOID TEST(KernelStreamTest, StreamRead1Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     data[0] = 0x12;
     data[99] = 0x13;
@@ -1101,10 +1040,8 @@ VOID TEST(KernelStreamTest, StreamRead1Bytes)
 */
 VOID TEST(KernelStreamTest, StreamRead2Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     data[0] = 0x01;
     data[1] = 0x02;
@@ -1130,10 +1067,8 @@ VOID TEST(KernelStreamTest, StreamRead2Bytes)
 */
 VOID TEST(KernelStreamTest, StreamRead3Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     data[0] = 0x01;
     data[1] = 0x02;
@@ -1159,10 +1094,8 @@ VOID TEST(KernelStreamTest, StreamRead3Bytes)
 */
 VOID TEST(KernelStreamTest, StreamRead4Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     data[0] = 0x01;
     data[1] = 0x02;
@@ -1188,10 +1121,8 @@ VOID TEST(KernelStreamTest, StreamRead4Bytes)
 */
 VOID TEST(KernelStreamTest, StreamRead8Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     data[0] = 0x01;
     data[1] = 0x02;
@@ -1227,10 +1158,8 @@ VOID TEST(KernelStreamTest, StreamRead8Bytes)
 */
 VOID TEST(KernelStreamTest, StreamReadString)
 {
-    SrsBuffer s;
     char data[] = "Hello, world!";
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, sizeof(data) - 1));
+    SrsBuffer s(data, sizeof(data) - 1);
     
     string str = s.read_string(2);
     EXPECT_STREQ("He", str.c_str());
@@ -1250,10 +1179,8 @@ VOID TEST(KernelStreamTest, StreamReadString)
 */
 VOID TEST(KernelStreamTest, StreamReadBytes)
 {
-    SrsBuffer s;
     char data[] = "Hello, world!";
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, sizeof(data) - 1));
+    SrsBuffer s(data, sizeof(data) - 1);
     
     char bytes[64];
     s.read_bytes(bytes, 2);
@@ -1277,10 +1204,8 @@ VOID TEST(KernelStreamTest, StreamReadBytes)
 */
 VOID TEST(KernelStreamTest, StreamWrite1Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     s.write_1bytes(0x10);
     s.write_1bytes(0x11);
@@ -1298,10 +1223,8 @@ VOID TEST(KernelStreamTest, StreamWrite1Bytes)
 */
 VOID TEST(KernelStreamTest, StreamWrite2Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     s.write_2bytes(0x1011);
     s.write_2bytes(0x1213);
@@ -1322,10 +1245,8 @@ VOID TEST(KernelStreamTest, StreamWrite2Bytes)
 */
 VOID TEST(KernelStreamTest, StreamWrite3Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     s.write_3bytes(0x101112);
     s.write_3bytes(0x131415);
@@ -1345,10 +1266,8 @@ VOID TEST(KernelStreamTest, StreamWrite3Bytes)
 */
 VOID TEST(KernelStreamTest, StreamWrite4Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     s.write_4bytes(0x10111213);
     s.write_4bytes(0x14151617);
@@ -1367,10 +1286,8 @@ VOID TEST(KernelStreamTest, StreamWrite4Bytes)
 */
 VOID TEST(KernelStreamTest, StreamWrite8Bytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     s.write_8bytes(0x1011121314151617LL);
     s.write_8bytes(0x1819202122232425LL);
@@ -1388,10 +1305,8 @@ VOID TEST(KernelStreamTest, StreamWrite8Bytes)
 */
 VOID TEST(KernelStreamTest, StreamWriteString)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     char str[] = {
         (char)0x10, (char)0x11, (char)0x12, (char)0x13,
@@ -1416,10 +1331,8 @@ VOID TEST(KernelStreamTest, StreamWriteString)
 */
 VOID TEST(KernelStreamTest, StreamWriteBytes)
 {
-    SrsBuffer s;
     char data[1024];
-    
-    EXPECT_TRUE(ERROR_SUCCESS == s.initialize(data, 1024));
+    SrsBuffer s(data, 1024);
     
     char str[] = {
         (char)0x10, (char)0x11, (char)0x12, (char)0x13,
@@ -1495,6 +1408,15 @@ VOID TEST(KernelUtilityTest, UtilityString)
     
     str1 = srs_string_replace(str, "o", "XX");
     EXPECT_STREQ("HellXX, WXXrld! HellXX, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "x");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "S!R");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "lHe");
+    EXPECT_STREQ("o, World! Hello, SRS!", str1.c_str());
     
     str1 = srs_string_trim_end(str, "x");
     EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
@@ -1502,7 +1424,7 @@ VOID TEST(KernelUtilityTest, UtilityString)
     str1 = srs_string_trim_end(str, "He");
     EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
     
-    str1 = srs_string_trim_end(str, "HeS!R");
+    str1 = srs_string_trim_end(str, "S!R");
     EXPECT_STREQ("Hello, World! Hello, ", str1.c_str());
     
     str1 = srs_string_remove(str, "x");
@@ -1513,6 +1435,18 @@ VOID TEST(KernelUtilityTest, UtilityString)
     
     str1 = srs_string_remove(str, "ol");
     EXPECT_STREQ("He, Wrd! He, SRS!", str1.c_str());
+
+    str1 = srs_erase_first_substr(str, "Hello");
+    EXPECT_STREQ(", World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_erase_first_substr(str, "XX");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_erase_last_substr(str, "Hello");
+    EXPECT_STREQ("Hello, World! , SRS!", str1.c_str());
+
+    str1 = srs_erase_last_substr(str, "XX");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
     
     EXPECT_FALSE(srs_string_ends_with("Hello", "x"));
     EXPECT_TRUE(srs_string_ends_with("Hello", "o"));
@@ -1522,92 +1456,275 @@ VOID TEST(KernelUtilityTest, UtilityString)
 VOID TEST(KernelUtility, AvcUev)
 {
     int32_t v;
-    SrsBuffer buf;
     SrsBitBuffer bb;
     char data[32];
     
     if (true) {
         data[0] = 0xff;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 1;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 1;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(0, v);
     }
     
     if (true) {
         data[0] = 0x40;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(1, v);
     }
     
     if (true) {
         data[0] = 0x60;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(2, v);
     }
     
     if (true) {
         data[0] = 0x20;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(3, v);
     }
     
     if (true) {
         data[0] = 0x28;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(4, v);
     }
     
     if (true) {
         data[0] = 0x30;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(5, v);
     }
     
     if (true) {
         data[0] = 0x38;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(6, v);
     }
     
     if (true) {
         data[0] = 0x10;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(7, v);
     }
     
     if (true) {
         data[0] = 0x12;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(8, v);
     }
     
     if (true) {
         data[0] = 0x14;
-        buf.initialize((char*)data, 1); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 1); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(9, v);
     }
     
     if (true) {
         data[0] = 0x01; data[1] = 0x12;
-        buf.initialize((char*)data, 2); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 2); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(128-1+9, v);
     }
     
     if (true) {
         data[0] = 0x00; data[1] = 0x91; data[2] = 0x00;
-        buf.initialize((char*)data, 3); bb.initialize(&buf); v = 0;
+        SrsBuffer buf((char*)data, 3); bb.initialize(&buf); v = 0;
         srs_avc_nalu_read_uev(&bb, v);
         EXPECT_EQ(256-1+0x22, v);
+    }
+}
+
+extern void __crc32_make_table(uint32_t t[256], uint32_t poly, bool reflect_in);
+
+VOID TEST(KernelUtility, CRC32MakeTable)
+{
+    uint32_t t[256];
+    
+    // IEEE, @see https://github.com/ossrs/srs/blob/608c88b8f2b352cdbce3b89b9042026ea907e2d3/trunk/src/kernel/srs_kernel_utility.cpp#L770
+    __crc32_make_table(t, 0x4c11db7, true);
+    
+    EXPECT_EQ((uint32_t)0x00000000, t[0]);
+    EXPECT_EQ((uint32_t)0x77073096, t[1]);
+    EXPECT_EQ((uint32_t)0xEE0E612C, t[2]);
+    EXPECT_EQ((uint32_t)0x990951BA, t[3]);
+    EXPECT_EQ((uint32_t)0x076DC419, t[4]);
+    EXPECT_EQ((uint32_t)0x706AF48F, t[5]);
+    EXPECT_EQ((uint32_t)0xE963A535, t[6]);
+    EXPECT_EQ((uint32_t)0x9E6495A3, t[7]);
+    
+    EXPECT_EQ((uint32_t)0xB3667A2E, t[248]);
+    EXPECT_EQ((uint32_t)0xC4614AB8, t[249]);
+    EXPECT_EQ((uint32_t)0x5D681B02, t[250]);
+    EXPECT_EQ((uint32_t)0x2A6F2B94, t[251]);
+    EXPECT_EQ((uint32_t)0xB40BBE37, t[252]);
+    EXPECT_EQ((uint32_t)0xC30C8EA1, t[253]);
+    EXPECT_EQ((uint32_t)0x5A05DF1B, t[254]);
+    EXPECT_EQ((uint32_t)0x2D02EF8D, t[255]);
+    
+    // IEEE, @see https://github.com/ossrs/srs/blob/608c88b8f2b352cdbce3b89b9042026ea907e2d3/trunk/src/kernel/srs_kernel_utility.cpp#L770
+    __crc32_make_table(t, 0x4c11db7, true);
+    
+    EXPECT_EQ((uint32_t)0x00000000, t[0]);
+    EXPECT_EQ((uint32_t)0x77073096, t[1]);
+    EXPECT_EQ((uint32_t)0xEE0E612C, t[2]);
+    EXPECT_EQ((uint32_t)0x990951BA, t[3]);
+    EXPECT_EQ((uint32_t)0x076DC419, t[4]);
+    EXPECT_EQ((uint32_t)0x706AF48F, t[5]);
+    EXPECT_EQ((uint32_t)0xE963A535, t[6]);
+    EXPECT_EQ((uint32_t)0x9E6495A3, t[7]);
+    
+    EXPECT_EQ((uint32_t)0xB3667A2E, t[248]);
+    EXPECT_EQ((uint32_t)0xC4614AB8, t[249]);
+    EXPECT_EQ((uint32_t)0x5D681B02, t[250]);
+    EXPECT_EQ((uint32_t)0x2A6F2B94, t[251]);
+    EXPECT_EQ((uint32_t)0xB40BBE37, t[252]);
+    EXPECT_EQ((uint32_t)0xC30C8EA1, t[253]);
+    EXPECT_EQ((uint32_t)0x5A05DF1B, t[254]);
+    EXPECT_EQ((uint32_t)0x2D02EF8D, t[255]);
+    
+    // MPEG, @see https://github.com/ossrs/srs/blob/608c88b8f2b352cdbce3b89b9042026ea907e2d3/trunk/src/kernel/srs_kernel_utility.cpp#L691
+    __crc32_make_table(t, 0x4c11db7, false);
+    
+    EXPECT_EQ((uint32_t)0x00000000, t[0]);
+    EXPECT_EQ((uint32_t)0x04c11db7, t[1]);
+    EXPECT_EQ((uint32_t)0x09823b6e, t[2]);
+    EXPECT_EQ((uint32_t)0x0d4326d9, t[3]);
+    EXPECT_EQ((uint32_t)0x130476dc, t[4]);
+    EXPECT_EQ((uint32_t)0x17c56b6b, t[5]);
+    EXPECT_EQ((uint32_t)0x1a864db2, t[6]);
+    EXPECT_EQ((uint32_t)0x1e475005, t[7]);
+    
+    EXPECT_EQ((uint32_t)0xafb010b1, t[248]);
+    EXPECT_EQ((uint32_t)0xab710d06, t[249]);
+    EXPECT_EQ((uint32_t)0xa6322bdf, t[250]);
+    EXPECT_EQ((uint32_t)0xa2f33668, t[251]);
+    EXPECT_EQ((uint32_t)0xbcb4666d, t[252]);
+    EXPECT_EQ((uint32_t)0xb8757bda, t[253]);
+    EXPECT_EQ((uint32_t)0xb5365d03, t[254]);
+    EXPECT_EQ((uint32_t)0xb1f740b4, t[255]);
+    
+    // MPEG, @see https://github.com/ossrs/srs/blob/608c88b8f2b352cdbce3b89b9042026ea907e2d3/trunk/src/kernel/srs_kernel_utility.cpp#L691
+    __crc32_make_table(t, 0x4c11db7, false);
+    
+    EXPECT_EQ((uint32_t)0x00000000, t[0]);
+    EXPECT_EQ((uint32_t)0x04c11db7, t[1]);
+    EXPECT_EQ((uint32_t)0x09823b6e, t[2]);
+    EXPECT_EQ((uint32_t)0x0d4326d9, t[3]);
+    EXPECT_EQ((uint32_t)0x130476dc, t[4]);
+    EXPECT_EQ((uint32_t)0x17c56b6b, t[5]);
+    EXPECT_EQ((uint32_t)0x1a864db2, t[6]);
+    EXPECT_EQ((uint32_t)0x1e475005, t[7]);
+    
+    EXPECT_EQ((uint32_t)0xafb010b1, t[248]);
+    EXPECT_EQ((uint32_t)0xab710d06, t[249]);
+    EXPECT_EQ((uint32_t)0xa6322bdf, t[250]);
+    EXPECT_EQ((uint32_t)0xa2f33668, t[251]);
+    EXPECT_EQ((uint32_t)0xbcb4666d, t[252]);
+    EXPECT_EQ((uint32_t)0xb8757bda, t[253]);
+    EXPECT_EQ((uint32_t)0xb5365d03, t[254]);
+    EXPECT_EQ((uint32_t)0xb1f740b4, t[255]);
+}
+
+VOID TEST(KernelUtility, CRC32IEEE)
+{
+    if (true) {
+        string datas[] = {
+            "123456789", "srs", "ossrs.net",
+            "SRS's a simplest, conceptual integrated, industrial-strength live streaming origin cluster."
+        };
+        
+        uint32_t checksums[] = {
+            0xcbf43926, 0x7df334e9, 0x2f52242b,
+            0x7e8677bd,
+        };
+        
+        for (int i = 0; i < (int)(sizeof(datas)/sizeof(string)); i++) {
+            string data = datas[i];
+            uint32_t checksum = checksums[i];
+            EXPECT_EQ(checksum, srs_crc32_ieee(data.data(), data.length(), 0));
+        }
+        
+        uint32_t previous = 0;
+        for (int i = 0; i < (int)(sizeof(datas)/sizeof(string)); i++) {
+            string data = datas[i];
+            previous = srs_crc32_ieee(data.data(), data.length(), previous);
+        }
+        EXPECT_EQ((uint32_t)0x431b8785, previous);
+    }
+    
+    if (true) {
+        string data = "123456789srs";
+        EXPECT_EQ((uint32_t)0xf567b5cf, srs_crc32_ieee(data.data(), data.length(), 0));
+    }
+    
+    if (true) {
+        string data = "123456789";
+        EXPECT_EQ((uint32_t)0xcbf43926, srs_crc32_ieee(data.data(), data.length(), 0));
+        
+        data = "srs";
+        EXPECT_EQ((uint32_t)0xf567b5cf, srs_crc32_ieee(data.data(), data.length(), 0xcbf43926));
+    }
+}
+
+VOID TEST(KernelUtility, CRC32MPEGTS)
+{
+    string datas[] = {
+        "123456789", "srs", "ossrs.net",
+        "SRS's a simplest, conceptual integrated, industrial-strength live streaming origin cluster."
+    };
+    
+    uint32_t checksums[] = {
+        0x0376e6e7, 0xd9089591, 0xbd17933f,
+        0x9f389f7d
+    };
+    
+    for (int i = 0; i < (int)(sizeof(datas)/sizeof(string)); i++) {
+        string data = datas[i];
+        uint32_t checksum = checksums[i];
+        EXPECT_EQ(checksum, (uint32_t)srs_crc32_mpegts(data.data(), data.length()));
+    }
+}
+
+VOID TEST(KernelUtility, Base64Decode)
+{
+    string cipher = "dXNlcjpwYXNzd29yZA==";
+    string expect = "user:password";
+    
+    string plaintext;
+    EXPECT_TRUE(srs_success == srs_av_base64_decode(cipher, plaintext));
+    EXPECT_TRUE(expect == plaintext);
+}
+
+VOID TEST(KernelUtility, StringToHex)
+{
+    if (true) {
+        uint8_t h[16];
+        EXPECT_EQ(-1, srs_hex_to_data(h, NULL, 0));
+        EXPECT_EQ(-1, srs_hex_to_data(h, "0", 1));
+        EXPECT_EQ(-1, srs_hex_to_data(h, "0g", 2));
+    }
+    
+    if (true) {
+        string s = "139056E5A0";
+        uint8_t h[16];
+        
+        int n = srs_hex_to_data(h, s.data(), s.length());
+        EXPECT_EQ(n, 5);
+        EXPECT_EQ(0x13, h[0]);
+        EXPECT_EQ(0x90, h[1]);
+        EXPECT_EQ(0x56, h[2]);
+        EXPECT_EQ(0xe5, h[3]);
+        EXPECT_EQ(0xa0, h[4]);
     }
 }
 

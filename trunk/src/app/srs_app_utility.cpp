@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <math.h>
+#include <netdb.h>
 
 #ifdef SRS_OSX
 #include <sys/sysctl.h>
@@ -155,17 +156,17 @@ string srs_path_build_timestamp(string template_path)
     return path;
 }
 
-int srs_kill_forced(int& pid)
+srs_error_t srs_kill_forced(int& pid)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (pid <= 0) {
-        return ret;
+        return err;
     }
     
     // first, try kill by SIGTERM.
     if (kill(pid, SIGTERM) < 0) {
-        return ERROR_SYSTEM_KILL;
+        return srs_error_new(ERROR_SYSTEM_KILL, "kill");
     }
     
     // wait to quit.
@@ -174,12 +175,12 @@ int srs_kill_forced(int& pid)
         int status = 0;
         pid_t qpid = -1;
         if ((qpid = waitpid(pid, &status, WNOHANG)) < 0) {
-            return ERROR_SYSTEM_KILL;
+            return srs_error_new(ERROR_SYSTEM_KILL, "kill");
         }
         
         // 0 is not quit yet.
         if (qpid == 0) {
-            st_usleep(10 * 1000);
+            srs_usleep(10 * 1000);
             continue;
         }
         
@@ -187,12 +188,12 @@ int srs_kill_forced(int& pid)
         srs_trace("SIGTERM stop process pid=%d ok.", pid);
         pid = -1;
         
-        return ret;
+        return err;
     }
     
     // then, try kill by SIGKILL.
     if (kill(pid, SIGKILL) < 0) {
-        return ERROR_SYSTEM_KILL;
+        return srs_error_new(ERROR_SYSTEM_KILL, "kill");
     }
     
     // wait for the process to quit.
@@ -204,14 +205,14 @@ int srs_kill_forced(int& pid)
     // @remark when we use SIGKILL to kill process, it must be killed,
     //      so we always wait it to quit by infinite loop.
     while (waitpid(pid, &status, 0) < 0) {
-        st_usleep(10 * 1000);
+        srs_usleep(10 * 1000);
         continue;
     }
     
     srs_trace("SIGKILL stop process pid=%d ok.", pid);
     pid = -1;
     
-    return ret;
+    return err;
 }
 
 static SrsRusage _srs_system_rusage;
@@ -1105,74 +1106,64 @@ void srs_update_rtmp_server(int nb_conn, SrsKbps* kbps)
 
 string srs_get_local_ip(int fd)
 {
-    std::string ip;
-    
     // discovery client information
-    sockaddr_in addr;
+    sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
     if (getsockname(fd, (sockaddr*)&addr, &addrlen) == -1) {
-        return ip;
+        return "";
     }
-    srs_verbose("get local ip success.");
-    
-    // ip v4 or v6
-    char buf[INET6_ADDRSTRLEN];
-    memset(buf, 0, sizeof(buf));
-    
-    if ((inet_ntop(addr.sin_family, &addr.sin_addr, buf, sizeof(buf))) == NULL) {
-        return ip;
+
+    char saddr[64];
+    char* h = (char*)saddr;
+    socklen_t nbh = (socklen_t)sizeof(saddr);
+    const int r0 = getnameinfo((const sockaddr*)&addr, addrlen, h, nbh,NULL, 0, NI_NUMERICHOST);
+    if(r0) {
+        return "";
     }
-    
-    ip = buf;
-    
-    srs_verbose("get local ip of client ip=%s, fd=%d", buf, fd);
-    
-    return ip;
+
+    return std::string(saddr);
 }
 
 int srs_get_local_port(int fd)
 {
     // discovery client information
-    sockaddr_in addr;
+    sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
     if (getsockname(fd, (sockaddr*)&addr, &addrlen) == -1) {
         return 0;
     }
-    srs_verbose("get local ip success.");
-    
-    int port = ntohs(addr.sin_port);
-    
-    srs_verbose("get local ip of client port=%s, fd=%d", port, fd);
-    
+
+    int port = 0;
+    switch(addr.ss_family) {
+        case AF_INET:
+            port = ntohs(((sockaddr_in*)&addr)->sin_port);
+         break;
+        case AF_INET6:
+            port = ntohs(((sockaddr_in6*)&addr)->sin6_port);
+         break;
+    }
+
     return port;
 }
 
 string srs_get_peer_ip(int fd)
 {
-    std::string ip;
-    
     // discovery client information
-    sockaddr_in addr;
+    sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
-    if (getpeername(fd, (sockaddr*)&addr, &addrlen) == -1) {
-        return ip;
+    if (getsockname(fd, (sockaddr*)&addr, &addrlen) == -1) {
+        return "";
     }
-    srs_verbose("get peer name success.");
-    
-    // ip v4 or v6
-    char buf[INET6_ADDRSTRLEN];
-    memset(buf, 0, sizeof(buf));
-    
-    if ((inet_ntop(addr.sin_family, &addr.sin_addr, buf, sizeof(buf))) == NULL) {
-        return ip;
+
+    char saddr[64];
+    char* h = (char*)saddr;
+    socklen_t nbh = (socklen_t)sizeof(saddr);
+    const int r0 = getnameinfo((const sockaddr*)&addr, addrlen, h, nbh, NULL, 0, NI_NUMERICHOST);
+    if(r0) {
+        return "";
     }
-    srs_verbose("get peer ip of client ip=%s, fd=%d", buf, fd);
-    
-    ip = buf;
-    
-    srs_verbose("get peer ip success. ip=%s, fd=%d", ip.c_str(), fd);
-    
-    return ip;
+
+    return std::string(saddr);
 }
 
 bool srs_is_digit_number(const string& str)

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -36,12 +36,9 @@ using namespace std;
 #include <srs_kernel_consts.hpp>
 #include <srs_protocol_utility.hpp>
 
-// when error, ng-exec sleep for a while and retry.
-#define SRS_RTMP_EXEC_CIMS (3000)
-
 SrsNgExec::SrsNgExec()
 {
-    pthread = new SrsReusableThread("encoder", this, SRS_RTMP_EXEC_CIMS);
+    trd = new SrsDummyCoroutine();
     pprint = SrsPithyPrint::create_exec();
 }
 
@@ -49,42 +46,71 @@ SrsNgExec::~SrsNgExec()
 {
     on_unpublish();
     
-    srs_freep(pthread);
+    srs_freep(trd);
     srs_freep(pprint);
 }
 
-int SrsNgExec::on_publish(SrsRequest* req)
+srs_error_t SrsNgExec::on_publish(SrsRequest* req)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // when publish, parse the exec_publish.
-    if ((ret = parse_exec_publish(req)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = parse_exec_publish(req)) != srs_success) {
+        return srs_error_wrap(err, "exec publish");
     }
     
     // start thread to run all processes.
-    if ((ret = pthread->start()) != ERROR_SUCCESS) {
-        srs_error("st_thread_create failed. ret=%d", ret);
-        return ret;
+    srs_freep(trd);
+    trd = new SrsSTCoroutine("encoder", this, _srs_context->get_id());
+    if ((err = trd->start()) != srs_success) {
+        return srs_error_wrap(err, "start thread");
     }
-    srs_trace("exec thread cid=%d, current_cid=%d", pthread->cid(), _srs_context->get_id());
     
-    return ret;
+    return err;
 }
 
 void SrsNgExec::on_unpublish()
 {
-    pthread->stop();
+    trd->stop();
     clear_exec_publish();
 }
 
-int SrsNgExec::cycle()
+// when error, ng-exec sleep for a while and retry.
+#define SRS_RTMP_EXEC_CIMS (3000)
+srs_error_t SrsNgExec::cycle()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
+    
+    while (true) {
+        if ((err = do_cycle()) != srs_success) {
+            srs_warn("EXEC: Ignore error, %s", srs_error_desc(err).c_str());
+            srs_freep(err);
+        }
+        
+        if ((err = trd->pull()) != srs_success) {
+            err = srs_error_wrap(err, "ng exec cycle");
+            break;
+        }
+    
+        srs_usleep(SRS_RTMP_EXEC_CIMS * 1000);
+    }
+    
+    std::vector<SrsProcess*>::iterator it;
+    for (it = exec_publishs.begin(); it != exec_publishs.end(); ++it) {
+        SrsProcess* ep = *it;
+        ep->stop();
+    }
+    
+    return err;
+}
+
+srs_error_t SrsNgExec::do_cycle()
+{
+    srs_error_t err = srs_success;
     
     // ignore when no exec.
     if (exec_publishs.empty()) {
-        return ret;
+        return err;
     }
     
     std::vector<SrsProcess*>::iterator it;
@@ -92,40 +118,29 @@ int SrsNgExec::cycle()
         SrsProcess* process = *it;
         
         // start all processes.
-        if ((ret = process->start()) != ERROR_SUCCESS) {
-            srs_error("exec publish start failed. ret=%d", ret);
-            return ret;
+        if ((err = process->start()) != srs_success) {
+            return srs_error_wrap(err, "process start");
         }
         
         // check process status.
-        if ((ret = process->cycle()) != ERROR_SUCCESS) {
-            srs_error("exec publish cycle failed. ret=%d", ret);
-            return ret;
+        if ((err = process->cycle()) != srs_success) {
+            return srs_error_wrap(err, "process cycle");
         }
     }
     
     // pithy print
     show_exec_log_message();
     
-    return ret;
+    return err;
 }
 
-void SrsNgExec::on_thread_stop()
+srs_error_t SrsNgExec::parse_exec_publish(SrsRequest* req)
 {
-    std::vector<SrsProcess*>::iterator it;
-    for (it = exec_publishs.begin(); it != exec_publishs.end(); ++it) {
-        SrsProcess* ep = *it;
-        ep->stop();
-    }
-}
-
-int SrsNgExec::parse_exec_publish(SrsRequest* req)
-{
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (!_srs_config->get_exec_enabled(req->vhost)) {
         srs_trace("ignore disabled exec for vhost=%s", req->vhost.c_str());
-        return ret;
+        return err;
     }
     
     // stream name: vhost/app/stream for print
@@ -159,16 +174,15 @@ int SrsNgExec::parse_exec_publish(SrsRequest* req)
             argv.push_back(parse(req, epa));
         }
         
-        if ((ret = process->initialize(binary, argv)) != ERROR_SUCCESS) {
+        if ((err = process->initialize(binary, argv)) != srs_success) {
             srs_freep(process);
-            srs_error("initialize process failed, binary=%s, vhost=%s, ret=%d", binary.c_str(), req->vhost.c_str(), ret);
-            return ret;
+            return srs_error_wrap(err, "initialize process failed, binary=%s, vhost=%s", binary.c_str(), req->vhost.c_str());
         }
         
         exec_publishs.push_back(process);
     }
     
-    return ret;
+    return err;
 }
 
 void SrsNgExec::clear_exec_publish()
@@ -207,7 +221,7 @@ string SrsNgExec::parse(SrsRequest* req, string tmpl)
     output = srs_string_replace(output, "[pageUrl]", req->pageUrl);
     
     if (output.find("[url]") != string::npos) {
-        string url = srs_generate_rtmp_url(req->host, req->port, req->vhost, req->app, req->stream);
+        string url = srs_generate_rtmp_url(req->host, req->port, req->host, req->vhost, req->app, req->stream, req->param);
         output = srs_string_replace(output, "[url]", url);
     }
     

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -77,8 +77,8 @@ class ISrsHttpResponseWriter;
 
 // Error replies to the request with the specified error message and HTTP code.
 // The error message should be plain text.
-extern int srs_go_http_error(ISrsHttpResponseWriter* w, int code);
-extern int srs_go_http_error(ISrsHttpResponseWriter* w, int code, std::string error);
+extern srs_error_t srs_go_http_error(ISrsHttpResponseWriter* w, int code);
+extern srs_error_t srs_go_http_error(ISrsHttpResponseWriter* w, int code, std::string error);
 
 // get the status text of code.
 extern std::string srs_generate_http_status_text(int status);
@@ -180,7 +180,7 @@ public:
     // final the request to complete the chunked encoding.
     // for no-chunked mode,
     // final to send request, for example, content-length is 0.
-    virtual int final_request() = 0;
+    virtual srs_error_t final_request() = 0;
     
     // Header returns the header map that will be sent by WriteHeader.
     // Changing the header after a call to WriteHeader (or Write) has
@@ -193,12 +193,12 @@ public:
     // Content-Type line, Write adds a Content-Type set to the result of passing
     // the initial 512 bytes of written data to DetectContentType.
     // @param data, the data to send. NULL to flush header only.
-    virtual int write(char* data, int size) = 0;
+    virtual srs_error_t write(char* data, int size) = 0;
     /**
      * for the HTTP FLV, to writev to improve performance.
      * @see https://github.com/ossrs/srs/issues/405
      */
-    virtual int writev(const iovec* iov, int iovcnt, ssize_t* pnwrite) = 0;
+    virtual srs_error_t writev(const iovec* iov, int iovcnt, ssize_t* pnwrite) = 0;
     
     // WriteHeader sends an HTTP response header with status code.
     // If WriteHeader is not called explicitly, the first call to Write
@@ -235,7 +235,7 @@ public:
      *      or by chunked), because the sdk never know whether there is no data or
      *      infinite chunked.
      */
-    virtual int read(char* data, int nb_data, int* nb_read) = 0;
+    virtual srs_error_t read(char* data, int nb_data, int* nb_read) = 0;
 };
 
 // Objects implementing the Handler interface can be
@@ -255,7 +255,7 @@ public:
     virtual ~ISrsHttpHandler();
 public:
     virtual bool is_not_found();
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r) = 0;
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r) = 0;
 };
 
 // Redirect to a fixed URL
@@ -268,7 +268,7 @@ public:
     SrsHttpRedirectHandler(std::string u, int c);
     virtual ~SrsHttpRedirectHandler();
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 };
 
 // NotFound replies to the request with an HTTP 404 not found error.
@@ -279,7 +279,7 @@ public:
     virtual ~SrsHttpNotFoundHandler();
 public:
     virtual bool is_not_found();
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 };
 
 // FileServer returns a handler that serves HTTP requests
@@ -298,31 +298,31 @@ public:
     SrsHttpFileServer(std::string root_dir);
     virtual ~SrsHttpFileServer();
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 private:
     /**
      * serve the file by specified path
      */
-    virtual int serve_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
-    virtual int serve_flv_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
-    virtual int serve_mp4_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
+    virtual srs_error_t serve_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
+    virtual srs_error_t serve_flv_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
+    virtual srs_error_t serve_mp4_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath);
 protected:
     /**
      * when access flv file with x.flv?start=xxx
      */
-    virtual int serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath, int offset);
+    virtual srs_error_t serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath, int offset);
     /**
      * when access mp4 file with x.mp4?range=start-end
      * @param start the start offset in bytes.
      * @param end the end offset in bytes. -1 to end of file.
      * @remark response data in [start, end].
      */
-    virtual int serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath, int start, int end);
+    virtual srs_error_t serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string fullpath, int start, int end);
 protected:
     /**
      * copy the fs to response writer in size bytes.
      */
-    virtual int copy(ISrsHttpResponseWriter* w, SrsFileReader* fs, ISrsHttpMessage* r, int size);
+    virtual srs_error_t copy(ISrsHttpResponseWriter* w, SrsFileReader* fs, ISrsHttpMessage* r, int size);
 };
 
 // the mux entry for server mux.
@@ -353,7 +353,7 @@ public:
      * @param request the http request message to match the handler.
      * @param ph the already matched handler, hijack can rewrite it.
      */
-    virtual int hijack(ISrsHttpMessage* request, ISrsHttpHandler** ph) = 0;
+    virtual srs_error_t hijack(ISrsHttpMessage* request, ISrsHttpHandler** ph) = 0;
 };
 
 /**
@@ -365,7 +365,7 @@ public:
     ISrsHttpServeMux();
     virtual ~ISrsHttpServeMux();
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r) = 0;
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r) = 0;
 };
 
 // ServeMux is an HTTP request multiplexer.
@@ -417,7 +417,7 @@ public:
     /**
      * initialize the http serve mux.
      */
-    virtual int initialize();
+    virtual srs_error_t initialize();
     /**
      * hijack the http match.
      */
@@ -426,16 +426,14 @@ public:
 public:
     // Handle registers the handler for the given pattern.
     // If a handler already exists for pattern, Handle panics.
-    virtual int handle(std::string pattern, ISrsHttpHandler* handler);
-    // whether the http muxer can serve the specified message,
-    // if not, user can try next muxer.
-    virtual bool can_serve(ISrsHttpMessage* r);
+    virtual srs_error_t handle(std::string pattern, ISrsHttpHandler* handler);
 // interface ISrsHttpServeMux
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+public:
+    virtual srs_error_t find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph);
 private:
-    virtual int find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph);
-    virtual int match(ISrsHttpMessage* r, ISrsHttpHandler** ph);
+    virtual srs_error_t match(ISrsHttpMessage* r, ISrsHttpHandler** ph);
     virtual bool path_match(std::string pattern, std::string path);
 };
 
@@ -453,10 +451,10 @@ public:
     SrsHttpCorsMux();
     virtual ~SrsHttpCorsMux();
 public:
-    virtual int initialize(ISrsHttpServeMux* worker, bool cros_enabled);
+    virtual srs_error_t initialize(ISrsHttpServeMux* worker, bool cros_enabled);
 // interface ISrsHttpServeMux
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 };
 
 // for http header.
@@ -540,12 +538,12 @@ public:
      * which is chunked encoding without chunked header.
      * @remark error when message is in chunked or content-length specified.
      */
-    virtual int enter_infinite_chunked() = 0;
+    virtual srs_error_t enter_infinite_chunked() = 0;
     /**
      * read body to string.
      * @remark for small http body.
      */
-    virtual int body_read_all(std::string& body) = 0;
+    virtual srs_error_t body_read_all(std::string& body) = 0;
     /**
      * get the body reader, to read one by one.
      * @remark when body is very large, or chunked, use this.
@@ -902,7 +900,7 @@ public:
     /**
      * initialize the http uri.
      */
-    virtual int initialize(std::string _url);
+    virtual srs_error_t initialize(std::string _url);
 public:
     virtual std::string get_url();
     virtual std::string get_schema();

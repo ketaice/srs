@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -60,37 +60,35 @@ SrsVodStream::~SrsVodStream()
 {
 }
 
-int SrsVodStream::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int offset)
+srs_error_t SrsVodStream::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int offset)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsFileReader fs;
     
     // open flv file
-    if ((ret = fs.open(fullpath)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = fs.open(fullpath)) != srs_success) {
+        return srs_error_wrap(err, "open file");
     }
     
     if (offset > fs.filesize()) {
-        ret = ERROR_HTTP_REMUX_OFFSET_OVERFLOW;
-        srs_warn("http flv streaming %s overflow. size=%" PRId64 ", offset=%d, ret=%d",
-                 fullpath.c_str(), fs.filesize(), offset, ret);
-        return ret;
+        return srs_error_new(ERROR_HTTP_REMUX_OFFSET_OVERFLOW, "http flv streaming %s overflow. size=%" PRId64 ", offset=%d",
+            fullpath.c_str(), fs.filesize(), offset);
     }
     
     SrsFlvVodStreamDecoder ffd;
     
     // open fast decoder
-    if ((ret = ffd.initialize(&fs)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = ffd.initialize(&fs)) != srs_success) {
+        return srs_error_wrap(err, "init ffd");
     }
     
     // save header, send later.
     char flv_header[13];
     
     // send flv header
-    if ((ret = ffd.read_header_ext(flv_header)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = ffd.read_header_ext(flv_header)) != srs_success) {
+        return srs_error_wrap(err, "ffd read header");
     }
     
     // save sequence header, send later
@@ -100,19 +98,17 @@ int SrsVodStream::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r
     if (true) {
         // send sequence header
         int64_t start = 0;
-        if ((ret = ffd.read_sequence_header_summary(&start, &sh_size)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = ffd.read_sequence_header_summary(&start, &sh_size)) != srs_success) {
+            return srs_error_wrap(err, "ffd read sps");
         }
         if (sh_size <= 0) {
-            ret = ERROR_HTTP_REMUX_SEQUENCE_HEADER;
-            srs_warn("http flv streaming no sequence header. size=%d, ret=%d", sh_size, ret);
-            return ret;
+            return srs_error_new(ERROR_HTTP_REMUX_SEQUENCE_HEADER, "no sequence, size=%d", sh_size);
         }
     }
     sh_data = new char[sh_size];
     SrsAutoFreeA(char, sh_data);
-    if ((ret = fs.read(sh_data, sh_size, NULL)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = fs.read(sh_data, sh_size, NULL)) != srs_success) {
+        return srs_error_wrap(err, "fs read");
     }
     
     // seek to data offset
@@ -123,30 +119,29 @@ int SrsVodStream::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r
     w->header()->set_content_type("video/x-flv");
     
     // write flv header and sequence header.
-    if ((ret = w->write(flv_header, sizeof(flv_header))) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = w->write(flv_header, sizeof(flv_header))) != srs_success) {
+        return srs_error_wrap(err, "write flv header");
     }
-    if (sh_size > 0 && (ret = w->write(sh_data, sh_size)) != ERROR_SUCCESS) {
-        return ret;
+    if (sh_size > 0 && (err = w->write(sh_data, sh_size)) != srs_success) {
+        return srs_error_wrap(err, "write sequence");
     }
     
     // write body.
-    if ((ret = ffd.seek2(offset)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = ffd.seek2(offset)) != srs_success) {
+        return srs_error_wrap(err, "ffd seek");
     }
     
     // send data
-    if ((ret = copy(w, &fs, r, (int)left)) != ERROR_SUCCESS) {
-        srs_warn("read flv=%s size=%d failed, ret=%d", fullpath.c_str(), left, ret);
-        return ret;
+    if ((err = copy(w, &fs, r, (int)left)) != srs_success) {
+        return srs_error_wrap(err, "read flv=%s size=%d", fullpath.c_str(), left);
     }
     
-    return ret;
+    return err;
 }
 
-int SrsVodStream::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int start, int end)
+srs_error_t SrsVodStream::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int start, int end)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_assert(start >= 0);
     srs_assert(end == -1 || end >= 0);
@@ -154,8 +149,8 @@ int SrsVodStream::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r
     SrsFileReader fs;
     
     // open flv file
-    if ((ret = fs.open(fullpath)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = fs.open(fullpath)) != srs_success) {
+        return srs_error_wrap(err, "fs open");
     }
     
     // parse -1 to whole file.
@@ -164,10 +159,8 @@ int SrsVodStream::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r
     }
     
     if (end > fs.filesize() || start > end) {
-        ret = ERROR_HTTP_REMUX_OFFSET_OVERFLOW;
-        srs_warn("http mp4 streaming %s overflow. size=%" PRId64 ", offset=%d, ret=%d",
-                 fullpath.c_str(), fs.filesize(), start, ret);
-        return ret;
+        return srs_error_new(ERROR_HTTP_REMUX_OFFSET_OVERFLOW, "http mp4 streaming %s overflow. size=%" PRId64 ", offset=%d",
+            fullpath.c_str(), fs.filesize(), start);
     }
     
     // seek to data offset, [start, end] for range.
@@ -189,12 +182,11 @@ int SrsVodStream::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r
     fs.seek2(start);
     
     // send data
-    if ((ret = copy(w, &fs, r, (int)left)) != ERROR_SUCCESS) {
-        srs_warn("read mp4=%s size=%d failed, ret=%d", fullpath.c_str(), left, ret);
-        return ret;
+    if ((err = copy(w, &fs, r, (int)left)) != srs_success) {
+        return srs_error_wrap(err, "read mp4=%s size=%d", fullpath.c_str(), left);
     }
     
-    return ret;
+    return err;
 }
 
 SrsHttpStaticServer::SrsHttpStaticServer(SrsServer* svr)
@@ -208,9 +200,9 @@ SrsHttpStaticServer::~SrsHttpStaticServer()
     _srs_config->unsubscribe(this);
 }
 
-int SrsHttpStaticServer::initialize()
+srs_error_t SrsHttpStaticServer::initialize()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     bool default_root_exists = false;
     
@@ -225,8 +217,8 @@ int SrsHttpStaticServer::initialize()
         
         string pmount;
         string vhost = conf->arg0();
-        if ((ret = mount_vhost(vhost, pmount)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = mount_vhost(vhost, pmount)) != srs_success) {
+            return srs_error_wrap(err, "mount vhost");
         }
         
         if (pmount == "/") {
@@ -239,28 +231,27 @@ int SrsHttpStaticServer::initialize()
     if (!default_root_exists) {
         // add root
         std::string dir = _srs_config->get_http_stream_dir();
-        if ((ret = mux.handle("/", new SrsVodStream(dir))) != ERROR_SUCCESS) {
-            srs_error("http: mount root dir=%s failed. ret=%d", dir.c_str(), ret);
-            return ret;
+        if ((err = mux.handle("/", new SrsVodStream(dir))) != srs_success) {
+            return srs_error_wrap(err, "mount root dir=%s", dir.c_str());
         }
         srs_trace("http: root mount to %s", dir.c_str());
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpStaticServer::mount_vhost(string vhost, string& pmount)
+srs_error_t SrsHttpStaticServer::mount_vhost(string vhost, string& pmount)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // when vhost disabled, ignore.
     if (!_srs_config->get_vhost_enabled(vhost)) {
-        return ret;
+        return err;
     }
     
     // when vhost http_static disabled, ignore.
     if (!_srs_config->get_vhost_http_enabled(vhost)) {
-        return ret;
+        return err;
     }
     
     std::string mount = _srs_config->get_vhost_http_mount(vhost);
@@ -279,33 +270,31 @@ int SrsHttpStaticServer::mount_vhost(string vhost, string& pmount)
     }
     
     // mount the http of vhost.
-    if ((ret = mux.handle(mount, new SrsVodStream(dir))) != ERROR_SUCCESS) {
-        srs_error("http: mount dir=%s for vhost=%s failed. ret=%d", dir.c_str(), vhost.c_str(), ret);
-        return ret;
+    if ((err = mux.handle(mount, new SrsVodStream(dir))) != srs_success) {
+        return srs_error_wrap(err, "mux handle");
     }
     srs_trace("http: vhost=%s mount to %s at %s", vhost.c_str(), mount.c_str(), dir.c_str());
     
     pmount = mount;
     
-    return ret;
+    return err;
 }
 
-int SrsHttpStaticServer::on_reload_vhost_added(string vhost)
+srs_error_t SrsHttpStaticServer::on_reload_vhost_added(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     string pmount;
-    if ((ret = mount_vhost(vhost, pmount)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = mount_vhost(vhost, pmount)) != srs_success) {
+        return srs_error_wrap(err, "mount vhost");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpStaticServer::on_reload_vhost_http_updated()
+srs_error_t SrsHttpStaticServer::on_reload_vhost_http_updated()
 {
-    int ret = ERROR_SUCCESS;
     // TODO: FIXME: implements it.
-    return ret;
+    return srs_success;
 }
 

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -51,7 +51,7 @@ public:
     SrsIngesterFFMPEG();
     virtual ~SrsIngesterFFMPEG();
 public:
-    virtual int initialize(SrsFFMPEG* ff, std::string v, std::string i);
+    virtual srs_error_t initialize(SrsFFMPEG* ff, std::string v, std::string i);
     // the ingest uri, [vhost]/[ingest id]
     virtual std::string uri();
     // the alive in ms.
@@ -59,9 +59,9 @@ public:
     virtual bool equals(std::string v, std::string i);
     virtual bool equals(std::string v);
 public:
-    virtual int start();
+    virtual srs_error_t start();
     virtual void stop();
-    virtual int cycle();
+    virtual srs_error_t cycle();
     // @see SrsFFMPEG.fast_stop().
     virtual void fast_stop();
 };
@@ -71,12 +71,12 @@ public:
  * encode with FFMPEG(optional),
  * push to SRS(or any RTMP server) over RTMP.
  */
-class SrsIngester : public ISrsReusableThreadHandler, public ISrsReloadHandler
+class SrsIngester : public ISrsCoroutineHandler, public ISrsReloadHandler
 {
 private:
     std::vector<SrsIngesterFFMPEG*> ingesters;
 private:
-    SrsReusableThread* pthread;
+    SrsCoroutine* trd;
     SrsPithyPrint* pprint;
     // whether the ingesters are expired,
     // for example, the listen port changed,
@@ -88,29 +88,30 @@ public:
 public:
     virtual void dispose();
 public:
-    virtual int start();
+    virtual srs_error_t start();
     virtual void stop();
 private:
     virtual void fast_stop();
 // interface ISrsReusableThreadHandler.
 public:
-    virtual int cycle();
-    virtual void on_thread_stop();
+    virtual srs_error_t cycle();
+private:
+    virtual srs_error_t do_cycle();
 private:
     virtual void clear_engines();
-    virtual int parse();
-    virtual int parse_ingesters(SrsConfDirective* vhost);
-    virtual int parse_engines(SrsConfDirective* vhost, SrsConfDirective* ingest);
-    virtual int initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsConfDirective* vhost, SrsConfDirective* ingest, SrsConfDirective* engine);
+    virtual srs_error_t parse();
+    virtual srs_error_t parse_ingesters(SrsConfDirective* vhost);
+    virtual srs_error_t parse_engines(SrsConfDirective* vhost, SrsConfDirective* ingest);
+    virtual srs_error_t initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsConfDirective* vhost, SrsConfDirective* ingest, SrsConfDirective* engine);
     virtual void show_ingest_log_message();
 // interface ISrsReloadHandler.
 public:
-    virtual int on_reload_vhost_removed(std::string vhost);
-    virtual int on_reload_vhost_added(std::string vhost);
-    virtual int on_reload_ingest_removed(std::string vhost, std::string ingest_id);
-    virtual int on_reload_ingest_added(std::string vhost, std::string ingest_id);
-    virtual int on_reload_ingest_updated(std::string vhost, std::string ingest_id);
-    virtual int on_reload_listen();
+    virtual srs_error_t on_reload_vhost_removed(std::string vhost);
+    virtual srs_error_t on_reload_vhost_added(std::string vhost);
+    virtual srs_error_t on_reload_ingest_removed(std::string vhost, std::string ingest_id);
+    virtual srs_error_t on_reload_ingest_added(std::string vhost, std::string ingest_id);
+    virtual srs_error_t on_reload_ingest_updated(std::string vhost, std::string ingest_id);
+    virtual srs_error_t on_reload_listen();
 };
 
 #endif

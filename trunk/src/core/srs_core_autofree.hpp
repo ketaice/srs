@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -46,11 +46,11 @@
  *      where the char* pstr = new char[size].
  */
 #define SrsAutoFree(className, instance) \
-impl__SrsAutoFree<className> _auto_free_##instance(&instance, false)
+impl_SrsAutoFree<className> _auto_free_##instance(&instance, false)
 #define SrsAutoFreeA(className, instance) \
-impl__SrsAutoFree<className> _auto_free_array_##instance(&instance, true)
+impl_SrsAutoFree<className> _auto_free_array_##instance(&instance, true)
 template<class T>
-class impl__SrsAutoFree
+class impl_SrsAutoFree
 {
 private:
     T** ptr;
@@ -59,12 +59,12 @@ public:
     /**
      * auto delete the ptr.
      */
-    impl__SrsAutoFree(T** p, bool array) {
+    impl_SrsAutoFree(T** p, bool array) {
         ptr = p;
         is_array = array;
     }
     
-    virtual ~impl__SrsAutoFree() {
+    virtual ~impl_SrsAutoFree() {
         if (ptr == NULL || *ptr == NULL) {
             return;
         }

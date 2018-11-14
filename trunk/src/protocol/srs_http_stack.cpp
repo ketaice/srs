@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -122,21 +122,24 @@ string srs_go_http_detect(char* data, int size)
     return "application/octet-stream"; // fallback
 }
 
-int srs_go_http_error(ISrsHttpResponseWriter* w, int code)
+srs_error_t srs_go_http_error(ISrsHttpResponseWriter* w, int code)
 {
     return srs_go_http_error(w, code, srs_generate_http_status_text(code));
 }
 
-int srs_go_http_error(ISrsHttpResponseWriter* w, int code, string error)
+srs_error_t srs_go_http_error(ISrsHttpResponseWriter* w, int code, string error)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     w->header()->set_content_type("text/plain; charset=utf-8");
     w->header()->set_content_length(error.length());
     w->write_header(code);
-    w->write((char*)error.data(), (int)error.length());
     
-    return ret;
+    if ((err = w->write((char*)error.data(), (int)error.length())) != srs_success) {
+        return srs_error_wrap(err, "http write");
+    }
+    
+    return err;
 }
 
 SrsHttpHeader::SrsHttpHeader()
@@ -237,10 +240,8 @@ SrsHttpRedirectHandler::~SrsHttpRedirectHandler()
 {
 }
 
-int SrsHttpRedirectHandler::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpRedirectHandler::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
-    int ret = ERROR_SUCCESS;
-    
     string location = url;
     if (!r->query().empty()) {
         location += "?" + r->query();
@@ -257,7 +258,7 @@ int SrsHttpRedirectHandler::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessag
     w->final_request();
     
     srs_info("redirect to %s.", location.c_str());
-    return ret;
+    return srs_success;
 }
 
 SrsHttpNotFoundHandler::SrsHttpNotFoundHandler()
@@ -273,7 +274,7 @@ bool SrsHttpNotFoundHandler::is_not_found()
     return true;
 }
 
-int SrsHttpNotFoundHandler::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpNotFoundHandler::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     return srs_go_http_error(w, SRS_CONSTS_HTTP_NotFound);
 }
@@ -287,7 +288,7 @@ SrsHttpFileServer::~SrsHttpFileServer()
 {
 }
 
-int SrsHttpFileServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpFileServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     string upath = r->path();
     
@@ -328,16 +329,15 @@ int SrsHttpFileServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
     return serve_file(w, r, fullpath);
 }
 
-int SrsHttpFileServer::serve_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
+srs_error_t SrsHttpFileServer::serve_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // open the target file.
     SrsFileReader fs;
     
-    if ((ret = fs.open(fullpath)) != ERROR_SUCCESS) {
-        srs_warn("open file %s failed, ret=%d", fullpath.c_str(), ret);
-        return ret;
+    if ((err = fs.open(fullpath)) != srs_success) {
+        return srs_error_wrap(err, "open file %s", fullpath.c_str());
     }
     
     int64_t length = fs.filesize();
@@ -393,17 +393,18 @@ int SrsHttpFileServer::serve_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r,
     
     // write body.
     int64_t left = length;
-    if ((ret = copy(w, &fs, r, (int)left)) != ERROR_SUCCESS) {
-        if (!srs_is_client_gracefully_close(ret)) {
-            srs_error("read file=%s size=%d failed, ret=%d", fullpath.c_str(), left, ret);
-        }
-        return ret;
+    if ((err = copy(w, &fs, r, (int)left)) != srs_success) {
+        return srs_error_wrap(err, "copy file=%s size=%d", fullpath.c_str(), left);
     }
     
-    return w->final_request();
+    if ((err = w->final_request()) != srs_success) {
+        return srs_error_wrap(err, "final request");
+    }
+    
+    return err;
 }
 
-int SrsHttpFileServer::serve_flv_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
+srs_error_t SrsHttpFileServer::serve_flv_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
 {
     std::string start = r->query_get("start");
     if (start.empty()) {
@@ -418,7 +419,7 @@ int SrsHttpFileServer::serve_flv_file(ISrsHttpResponseWriter* w, ISrsHttpMessage
     return serve_flv_stream(w, r, fullpath, offset);
 }
 
-int SrsHttpFileServer::serve_mp4_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
+srs_error_t SrsHttpFileServer::serve_mp4_file(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath)
 {
     // for flash to request mp4 range in query string.
     // for example, http://digitalprimates.net/dash/DashTest.html?url=http://dashdemo.edgesuite.net/digitalprimates/nexus/oops-20120802-manifest.mpd
@@ -455,19 +456,19 @@ int SrsHttpFileServer::serve_mp4_file(ISrsHttpResponseWriter* w, ISrsHttpMessage
     return serve_mp4_stream(w, r, fullpath, start, end);
 }
 
-int SrsHttpFileServer::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int offset)
+srs_error_t SrsHttpFileServer::serve_flv_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int offset)
 {
     return serve_file(w, r, fullpath);
 }
 
-int SrsHttpFileServer::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int start, int end)
+srs_error_t SrsHttpFileServer::serve_mp4_stream(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, string fullpath, int start, int end)
 {
     return serve_file(w, r, fullpath);
 }
 
-int SrsHttpFileServer::copy(ISrsHttpResponseWriter* w, SrsFileReader* fs, ISrsHttpMessage* r, int size)
+srs_error_t SrsHttpFileServer::copy(ISrsHttpResponseWriter* w, SrsFileReader* fs, ISrsHttpMessage* r, int size)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     int left = size;
     char* buf = r->http_ts_send_buffer();
@@ -475,17 +476,21 @@ int SrsHttpFileServer::copy(ISrsHttpResponseWriter* w, SrsFileReader* fs, ISrsHt
     while (left > 0) {
         ssize_t nread = -1;
         int max_read = srs_min(left, SRS_HTTP_TS_SEND_BUFFER_SIZE);
-        if ((ret = fs->read(buf, max_read, &nread)) != ERROR_SUCCESS) {
+        if ((err = fs->read(buf, max_read, &nread)) != srs_success) {
             break;
         }
         
         left -= nread;
-        if ((ret = w->write(buf, (int)nread)) != ERROR_SUCCESS) {
+        if ((err = w->write(buf, (int)nread)) != srs_success) {
             break;
         }
     }
     
-    return ret;
+    if (err != srs_success) {
+        return srs_error_wrap(err, "copy");
+    }
+    
+    return err;
 }
 
 SrsHttpMuxEntry::SrsHttpMuxEntry()
@@ -533,11 +538,13 @@ SrsHttpServeMux::~SrsHttpServeMux()
     hijackers.clear();
 }
 
-int SrsHttpServeMux::initialize()
+srs_error_t SrsHttpServeMux::initialize()
 {
-    int ret = ERROR_SUCCESS;
-    // TODO: FIXME: implements it.
-    return ret;
+    srs_error_t err = srs_success;
+    
+    // TODO: FIXME: Implements it.
+    
+    return err;
 }
 
 void SrsHttpServeMux::hijack(ISrsHttpMatchHijacker* h)
@@ -558,24 +565,18 @@ void SrsHttpServeMux::unhijack(ISrsHttpMatchHijacker* h)
     hijackers.erase(it);
 }
 
-int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
+srs_error_t SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
 {
-    int ret = ERROR_SUCCESS;
-    
     srs_assert(handler);
     
     if (pattern.empty()) {
-        ret = ERROR_HTTP_PATTERN_EMPTY;
-        srs_error("http: empty pattern. ret=%d", ret);
-        return ret;
+        return srs_error_new(ERROR_HTTP_PATTERN_EMPTY, "empty pattern");
     }
     
     if (entries.find(pattern) != entries.end()) {
         SrsHttpMuxEntry* exists = entries[pattern];
         if (exists->explicit_match) {
-            ret = ERROR_HTTP_PATTERN_DUPLICATED;
-            srs_error("http: multiple registrations for %s. ret=%d", pattern.c_str(), ret);
-            return ret;
+            return srs_error_new(ERROR_HTTP_PATTERN_DUPLICATED, "pattern=%s exists", pattern.c_str());
         }
     }
     
@@ -630,57 +631,37 @@ int SrsHttpServeMux::handle(std::string pattern, ISrsHttpHandler* handler)
         }
     }
     
-    return ret;
+    return srs_success;
 }
 
-bool SrsHttpServeMux::can_serve(ISrsHttpMessage* r)
+srs_error_t SrsHttpServeMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     ISrsHttpHandler* h = NULL;
-    if ((ret = find_handler(r, &h)) != ERROR_SUCCESS) {
-        return false;
+    if ((err = find_handler(r, &h)) != srs_success) {
+        return srs_error_wrap(err, "find handler");
     }
     
     srs_assert(h);
-    return !h->is_not_found();
-}
-
-int SrsHttpServeMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
-{
-    int ret = ERROR_SUCCESS;
-    
-    ISrsHttpHandler* h = NULL;
-    if ((ret = find_handler(r, &h)) != ERROR_SUCCESS) {
-        srs_error("find handler failed. ret=%d", ret);
-        return ret;
+    if ((err = h->serve_http(w, r)) != srs_success) {
+        return srs_error_wrap(err, "serve http");
     }
     
-    srs_assert(h);
-    if ((ret = h->serve_http(w, r)) != ERROR_SUCCESS) {
-        if (!srs_is_client_gracefully_close(ret)) {
-            srs_error("handler serve http failed. ret=%d", ret);
-        }
-        return ret;
-    }
-    
-    return ret;
+    return err;
 }
 
-int SrsHttpServeMux::find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph)
+srs_error_t SrsHttpServeMux::find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // TODO: FIXME: support the path . and ..
     if (r->url().find("..") != std::string::npos) {
-        ret = ERROR_HTTP_URL_NOT_CLEAN;
-        srs_error("htt url not canonical, url=%s. ret=%d", r->url().c_str(), ret);
-        return ret;
+        return srs_error_new(ERROR_HTTP_URL_NOT_CLEAN, "url %s not canonical", r->url().c_str());
     }
     
-    if ((ret = match(r, ph)) != ERROR_SUCCESS) {
-        srs_error("http match handler failed. ret=%d", ret);
-        return ret;
+    if ((err = match(r, ph)) != srs_success) {
+        return srs_error_wrap(err, "http match");
     }
     
     // always hijack.
@@ -689,9 +670,8 @@ int SrsHttpServeMux::find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph)
         std::vector<ISrsHttpMatchHijacker*>::iterator it;
         for (it = hijackers.begin(); it != hijackers.end(); ++it) {
             ISrsHttpMatchHijacker* hijacker = *it;
-            if ((ret = hijacker->hijack(r, ph)) != ERROR_SUCCESS) {
-                srs_error("hijacker match failed. ret=%d", ret);
-                return ret;
+            if ((err = hijacker->hijack(r, ph)) != srs_success) {
+                return srs_error_wrap(err, "http hijack");
             }
         }
     }
@@ -701,13 +681,11 @@ int SrsHttpServeMux::find_handler(ISrsHttpMessage* r, ISrsHttpHandler** ph)
         *ph = h404;
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpServeMux::match(ISrsHttpMessage* r, ISrsHttpHandler** ph)
+srs_error_t SrsHttpServeMux::match(ISrsHttpMessage* r, ISrsHttpHandler** ph)
 {
-    int ret = ERROR_SUCCESS;
-    
     std::string path = r->path();
     
     // Host-specific pattern takes precedence over generic ones
@@ -739,7 +717,7 @@ int SrsHttpServeMux::match(ISrsHttpMessage* r, ISrsHttpHandler** ph)
     
     *ph = h;
     
-    return ret;
+    return srs_success;
 }
 
 bool SrsHttpServeMux::path_match(string pattern, string path)
@@ -777,16 +755,18 @@ SrsHttpCorsMux::~SrsHttpCorsMux()
 {
 }
 
-int SrsHttpCorsMux::initialize(ISrsHttpServeMux* worker, bool cros_enabled)
+srs_error_t SrsHttpCorsMux::initialize(ISrsHttpServeMux* worker, bool cros_enabled)
 {
     next = worker;
     enabled = cros_enabled;
     
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int SrsHttpCorsMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpCorsMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
+    srs_error_t err = srs_success;
+    
     // If CORS enabled, and there is a "Origin" header, it's CORS.
     if (enabled) {
         for (int i = 0; i < r->request_header_count(); i++) {
@@ -815,7 +795,9 @@ int SrsHttpCorsMux::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         } else {
             w->write_header(SRS_CONSTS_HTTP_MethodNotAllowed);
         }
-        return w->final_request();
+        if ((err = w->final_request()) != srs_success) {
+            return srs_error_wrap(err, "final request");
+        }
     }
     
     srs_assert(next);
@@ -3018,7 +3000,7 @@ http_body_is_final(const struct http_parser *parser) {
 /*
  The MIT License (MIT)
  
- Copyright (c) 2013-2017 OSSRS(winlin)
+ Copyright (c) 2013-2018 Winlin
  
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -3046,9 +3028,9 @@ SrsHttpUri::~SrsHttpUri()
 {
 }
 
-int SrsHttpUri::initialize(string _url)
+srs_error_t SrsHttpUri::initialize(string _url)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     schema = host = path = query = "";
     
@@ -3056,12 +3038,9 @@ int SrsHttpUri::initialize(string _url)
     const char* purl = url.c_str();
     
     http_parser_url hp_u;
-    if((ret = http_parser_parse_url(purl, url.length(), 0, &hp_u)) != 0){
-        int code = ret;
-        ret = ERROR_HTTP_PARSE_URI;
-        
-        srs_error("parse url %s failed, code=%d, ret=%d", purl, code, ret);
-        return ret;
+    int r0;
+    if((r0 = http_parser_parse_url(purl, url.length(), 0, &hp_u)) != 0){
+        return srs_error_new(ERROR_HTTP_PARSE_URI, "parse url %s failed, code=%d", purl, r0);
     }
     
     std::string field = get_uri_field(url, &hp_u, UF_SCHEMA);
@@ -3080,12 +3059,9 @@ int SrsHttpUri::initialize(string _url)
     }
     
     path = get_uri_field(url, &hp_u, UF_PATH);
-    srs_info("parse url %s success", purl);
-    
     query = get_uri_field(url, &hp_u, UF_QUERY);
-    srs_info("parse query %s success", query.c_str());
     
-    return ret;
+    return err;
 }
 
 string SrsHttpUri::get_url()
@@ -3123,12 +3099,6 @@ string SrsHttpUri::get_uri_field(string uri, http_parser_url* hp_u, http_parser_
     if((hp_u->field_set & (1 << field)) == 0){
         return "";
     }
-    
-    srs_verbose("uri field matched, off=%d, len=%d, value=%.*s",
-                hp_u->field_data[field].off,
-                hp_u->field_data[field].len,
-                hp_u->field_data[field].len,
-                uri.c_str() + hp_u->field_data[field].off);
     
     int offset = hp_u->field_data[field].off;
     int len = hp_u->field_data[field].len;

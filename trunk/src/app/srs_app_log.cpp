@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <srs_app_config.hpp>
 #include <srs_kernel_error.hpp>
@@ -67,10 +68,8 @@ SrsFastLog::~SrsFastLog()
     }
 }
 
-int SrsFastLog::initialize()
+srs_error_t SrsFastLog::initialize()
 {
-    int ret = ERROR_SUCCESS;
-    
     if (_srs_config) {
         _srs_config->subscribe(this);
         
@@ -79,7 +78,7 @@ int SrsFastLog::initialize()
         utc = _srs_config->get_utc_time();
     }
     
-    return ret;
+    return srs_success;
 }
 
 void SrsFastLog::reopen()
@@ -200,30 +199,30 @@ void SrsFastLog::error(const char* tag, int context_id, const char* fmt, ...)
     write_log(fd, log_data, size, SrsLogLevelError);
 }
 
-int SrsFastLog::on_reload_utc_time()
+srs_error_t SrsFastLog::on_reload_utc_time()
 {
     utc = _srs_config->get_utc_time();
     
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int SrsFastLog::on_reload_log_tank()
+srs_error_t SrsFastLog::on_reload_log_tank()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (!_srs_config) {
-        return ret;
+        return err;
     }
     
     bool tank = log_to_file_tank;
     log_to_file_tank = _srs_config->get_log_tank_file();
     
     if (tank) {
-        return ret;
+        return err;
     }
     
     if (!log_to_file_tank) {
-        return ret;
+        return err;
     }
     
     if (fd > 0) {
@@ -231,32 +230,32 @@ int SrsFastLog::on_reload_log_tank()
     }
     open_log_file();
     
-    return ret;
+    return err;
 }
 
-int SrsFastLog::on_reload_log_level()
+srs_error_t SrsFastLog::on_reload_log_level()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (!_srs_config) {
-        return ret;
+        return err;
     }
     
     level = srs_get_log_level(_srs_config->get_log_level());
     
-    return ret;
+    return err;
 }
 
-int SrsFastLog::on_reload_log_file()
+srs_error_t SrsFastLog::on_reload_log_file()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (!_srs_config) {
-        return ret;
+        return err;
     }
     
     if (!log_to_file_tank) {
-        return ret;
+        return err;
     }
     
     if (fd > 0) {
@@ -264,7 +263,7 @@ int SrsFastLog::on_reload_log_file()
     }
     open_log_file();
     
-    return ret;
+    return err;
 }
 
 void SrsFastLog::write_log(int& fd, char *str_log, int size, int level)

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -69,8 +69,8 @@ public:
     virtual ~SrsKafkaPartition();
 public:
     virtual std::string hostport();
-    virtual int connect();
-    virtual int flush(SrsKafkaPartitionCache* pc);
+    virtual srs_error_t connect();
+    virtual srs_error_t flush(SrsKafkaPartitionCache* pc);
 private:
     virtual void disconnect();
 };
@@ -89,7 +89,7 @@ public:
     virtual ~SrsKafkaMessage();
 // interface ISrsAsyncCallTask
 public:
-    virtual int call();
+    virtual srs_error_t call();
     virtual std::string to_string();
 };
 
@@ -123,7 +123,7 @@ public:
     /**
      * flush the specified partition cache.
      */
-    virtual int flush(SrsKafkaPartition* partition, int key, SrsKafkaPartitionCache* pc);
+    virtual srs_error_t flush(SrsKafkaPartition* partition, int key, SrsKafkaPartitionCache* pc);
 };
 
 /**
@@ -141,33 +141,33 @@ public:
      * @param type the type of client.
      * @param ip the peer ip of client.
      */
-    virtual int on_client(int key, SrsListenerType type, std::string ip) = 0;
+    virtual srs_error_t on_client(int key, SrsListenerType type, std::string ip) = 0;
     /**
      * when client close or disconnect for error.
      * @param key the partition map key, the client id or hash(ip).
      */
-    virtual int on_close(int key) = 0;
+    virtual srs_error_t on_close(int key) = 0;
 };
 
 // @global kafka event producer.
 extern ISrsKafkaCluster* _srs_kafka;
 // kafka initialize and disposer for global object.
-extern int srs_initialize_kafka();
+extern srs_error_t srs_initialize_kafka();
 extern void srs_dispose_kafka();
 
 /**
  * the kafka producer used to save log to kafka cluster.
  */
-class SrsKafkaProducer : virtual public ISrsReusableThreadHandler, virtual public ISrsKafkaCluster
+class SrsKafkaProducer : virtual public ISrsCoroutineHandler, virtual public ISrsKafkaCluster
 {
 private:
     // TODO: FIXME: support reload.
     bool enabled;
-    st_mutex_t lock;
-    SrsReusableThread* pthread;
+    srs_mutex_t lock;
+    SrsCoroutine* trd;
 private:
     bool metadata_ok;
-    st_cond_t metadata_expired;
+    srs_cond_t metadata_expired;
 public:
     std::vector<SrsKafkaPartition*> partitions;
     SrsKafkaCache* cache;
@@ -178,8 +178,8 @@ public:
     SrsKafkaProducer();
     virtual ~SrsKafkaProducer();
 public:
-    virtual int initialize();
-    virtual int start();
+    virtual srs_error_t initialize();
+    virtual srs_error_t start();
     virtual void stop();
 // internal: for worker to call task to send object.
 public:
@@ -189,23 +189,21 @@ public:
      * @param key the key to map to the partition, user can use cid or hash.
      * @param obj the json object; user must never free it again.
      */
-    virtual int send(int key, SrsJsonObject* obj);
+    virtual srs_error_t send(int key, SrsJsonObject* obj);
 // interface ISrsKafkaCluster
 public:
-    virtual int on_client(int key, SrsListenerType type, std::string ip);
-    virtual int on_close(int key);
+    virtual srs_error_t on_client(int key, SrsListenerType type, std::string ip);
+    virtual srs_error_t on_close(int key);
 // interface ISrsReusableThreadHandler
 public:
-    virtual int cycle();
-    virtual int on_before_cycle();
-    virtual int on_end_cycle();
+    virtual srs_error_t cycle();
 private:
     virtual void clear_metadata();
-    virtual int do_cycle();
-    virtual int request_metadata();
+    virtual srs_error_t do_cycle();
+    virtual srs_error_t request_metadata();
     // set the metadata to invalid and refresh it.
     virtual void refresh_metadata();
-    virtual int flush();
+    virtual srs_error_t flush();
 };
 
 #endif

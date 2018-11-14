@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -71,10 +71,10 @@ public:
     virtual ~SrsRtpConn();
 public:
     virtual int port();
-    virtual int listen();
+    virtual srs_error_t listen();
 // interface ISrsUdpHandler
 public:
-    virtual int on_udp_packet(sockaddr_in* from, char* buf, int nb_buf);
+    virtual srs_error_t on_udp_packet(const sockaddr* from, const int fromlen, char* buf, int nb_buf);
 };
 
 /**
@@ -104,13 +104,13 @@ public:
     virtual ~SrsRtspJitter();
 public:
     virtual int64_t timestamp();
-    virtual int correct(int64_t& ts);
+    virtual srs_error_t correct(int64_t& ts);
 };
 
 /**
  * the rtsp connection serve the fd.
  */
-class SrsRtspConn : public ISrsOneCycleThreadHandler
+class SrsRtspConn : public ISrsCoroutineHandler
 {
 private:
     std::string output_template;
@@ -129,11 +129,11 @@ private:
     int audio_channel;
     SrsRtpConn* audio_rtp;
 private:
-    st_netfd_t stfd;
+    srs_netfd_t stfd;
     SrsStSocket* skt;
     SrsRtspStack* rtsp;
     SrsRtspCaster* caster;
-    SrsOneCycleThread* trd;
+    SrsCoroutine* trd;
 private:
     SrsRequest* req;
     SrsSimpleRtmpClient* sdk;
@@ -149,32 +149,31 @@ private:
     std::string aac_specific_config;
     SrsRtspAudioCache* acache;
 public:
-    SrsRtspConn(SrsRtspCaster* c, st_netfd_t fd, std::string o);
+    SrsRtspConn(SrsRtspCaster* c, srs_netfd_t fd, std::string o);
     virtual ~SrsRtspConn();
 public:
-    virtual int serve();
+    virtual srs_error_t serve();
 private:
-    virtual int do_cycle();
-    // internal methods
+    virtual srs_error_t do_cycle();
+// internal methods
 public:
-    virtual int on_rtp_packet(SrsRtpPacket* pkt, int stream_id);
+    virtual srs_error_t on_rtp_packet(SrsRtpPacket* pkt, int stream_id);
 // interface ISrsOneCycleThreadHandler
 public:
-    virtual int cycle();
-    virtual void on_thread_stop();
+    virtual srs_error_t cycle();
 private:
-    virtual int on_rtp_video(SrsRtpPacket* pkt, int64_t dts, int64_t pts);
-    virtual int on_rtp_audio(SrsRtpPacket* pkt, int64_t dts);
-    virtual int kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts);
+    virtual srs_error_t on_rtp_video(SrsRtpPacket* pkt, int64_t dts, int64_t pts);
+    virtual srs_error_t on_rtp_audio(SrsRtpPacket* pkt, int64_t dts);
+    virtual srs_error_t kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts);
 private:
-    virtual int write_sequence_header();
-    virtual int write_h264_sps_pps(uint32_t dts, uint32_t pts);
-    virtual int write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts, uint32_t pts);
-    virtual int write_audio_raw_frame(char* frame, int frame_size, SrsRawAacStreamCodec* codec, uint32_t dts);
-    virtual int rtmp_write_packet(char type, uint32_t timestamp, char* data, int size);
+    virtual srs_error_t write_sequence_header();
+    virtual srs_error_t write_h264_sps_pps(uint32_t dts, uint32_t pts);
+    virtual srs_error_t write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts, uint32_t pts);
+    virtual srs_error_t write_audio_raw_frame(char* frame, int frame_size, SrsRawAacStreamCodec* codec, uint32_t dts);
+    virtual srs_error_t rtmp_write_packet(char type, uint32_t timestamp, char* data, int size);
 private:
     // Connect to RTMP server.
-    virtual int connect();
+    virtual srs_error_t connect();
     // Close the connection to RTMP server.
     virtual void close();
 };
@@ -200,14 +199,14 @@ public:
      * alloc a rtp port from local ports pool.
      * @param pport output the rtp port.
      */
-    virtual int alloc_port(int* pport);
+    virtual srs_error_t alloc_port(int* pport);
     /**
      * free the alloced rtp port.
      */
     virtual void free_port(int lpmin, int lpmax);
 // interface ISrsTcpHandler
 public:
-    virtual int on_tcp_client(st_netfd_t stfd);
+    virtual srs_error_t on_tcp_client(srs_netfd_t stfd);
     // internal methods.
 public:
     virtual void remove(SrsRtspConn* conn);

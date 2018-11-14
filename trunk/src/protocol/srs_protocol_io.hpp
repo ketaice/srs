@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -103,7 +103,7 @@ public:
      * read specified size bytes of data
      * @param nread, the actually read size, NULL to ignore.
      */
-    virtual int read_fully(void* buf, size_t size, ssize_t* nread) = 0;
+    virtual srs_error_t read_fully(void* buf, size_t size, ssize_t* nread) = 0;
 };
 
 /**

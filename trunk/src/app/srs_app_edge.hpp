@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -81,9 +81,9 @@ public:
     SrsEdgeUpstream();
     virtual ~SrsEdgeUpstream();
 public:
-    virtual int connect(SrsRequest* r, SrsLbRoundRobin* lb) = 0;
-    virtual int recv_message(SrsCommonMessage** pmsg) = 0;
-    virtual int decode_message(SrsCommonMessage* msg, SrsPacket** ppacket) = 0;
+    virtual srs_error_t connect(SrsRequest* r, SrsLbRoundRobin* lb) = 0;
+    virtual srs_error_t recv_message(SrsCommonMessage** pmsg) = 0;
+    virtual srs_error_t decode_message(SrsCommonMessage* msg, SrsPacket** ppacket) = 0;
     virtual void close() = 0;
 public:
     virtual void set_recv_timeout(int64_t tm) = 0;
@@ -102,9 +102,9 @@ public:
     SrsEdgeRtmpUpstream(std::string r);
     virtual ~SrsEdgeRtmpUpstream();
 public:
-    virtual int connect(SrsRequest* r, SrsLbRoundRobin* lb);
-    virtual int recv_message(SrsCommonMessage** pmsg);
-    virtual int decode_message(SrsCommonMessage* msg, SrsPacket** ppacket);
+    virtual srs_error_t connect(SrsRequest* r, SrsLbRoundRobin* lb);
+    virtual srs_error_t recv_message(SrsCommonMessage** pmsg);
+    virtual srs_error_t decode_message(SrsCommonMessage* msg, SrsPacket** ppacket);
     virtual void close();
 public:
     virtual void set_recv_timeout(int64_t tm);
@@ -114,13 +114,13 @@ public:
 /**
  * edge used to ingest stream from origin.
  */
-class SrsEdgeIngester : public ISrsReusableThread2Handler
+class SrsEdgeIngester : public ISrsCoroutineHandler
 {
 private:
     SrsSource* source;
     SrsPlayEdge* edge;
     SrsRequest* req;
-    SrsReusableThread2* pthread;
+    SrsCoroutine* trd;
     SrsLbRoundRobin* lb;
     SrsEdgeUpstream* upstream;
     // for RTMP 302 redirect.
@@ -129,28 +129,30 @@ public:
     SrsEdgeIngester();
     virtual ~SrsEdgeIngester();
 public:
-    virtual int initialize(SrsSource* s, SrsPlayEdge* e, SrsRequest* r);
-    virtual int start();
+    virtual srs_error_t initialize(SrsSource* s, SrsPlayEdge* e, SrsRequest* r);
+    virtual srs_error_t start();
     virtual void stop();
     virtual std::string get_curr_origin();
 // interface ISrsReusableThread2Handler
 public:
-    virtual int cycle();
+    virtual srs_error_t cycle();
 private:
-    virtual int ingest();
-    virtual int process_publish_message(SrsCommonMessage* msg);
+    virtual srs_error_t do_cycle();
+private:
+    virtual srs_error_t ingest();
+    virtual srs_error_t process_publish_message(SrsCommonMessage* msg);
 };
 
 /**
  * edge used to forward stream to origin.
  */
-class SrsEdgeForwarder : public ISrsReusableThread2Handler
+class SrsEdgeForwarder : public ISrsCoroutineHandler
 {
 private:
     SrsSource* source;
     SrsPublishEdge* edge;
     SrsRequest* req;
-    SrsReusableThread2* pthread;
+    SrsCoroutine* trd;
     SrsSimpleRtmpClient* sdk;
     SrsLbRoundRobin* lb;
     /**
@@ -170,14 +172,16 @@ public:
 public:
     virtual void set_queue_size(double queue_size);
 public:
-    virtual int initialize(SrsSource* s, SrsPublishEdge* e, SrsRequest* r);
-    virtual int start();
+    virtual srs_error_t initialize(SrsSource* s, SrsPublishEdge* e, SrsRequest* r);
+    virtual srs_error_t start();
     virtual void stop();
 // interface ISrsReusableThread2Handler
 public:
-    virtual int cycle();
+    virtual srs_error_t cycle();
+private:
+    virtual srs_error_t do_cycle();
 public:
-    virtual int proxy(SrsCommonMessage* msg);
+    virtual srs_error_t proxy(SrsCommonMessage* msg);
 };
 
 /**
@@ -198,11 +202,11 @@ public:
      * for we assume all client to edge is invalid,
      * if auth open, edge must valid it from origin, then service it.
      */
-    virtual int initialize(SrsSource* source, SrsRequest* req);
+    virtual srs_error_t initialize(SrsSource* source, SrsRequest* req);
     /**
      * when client play stream on edge.
      */
-    virtual int on_client_play();
+    virtual srs_error_t on_client_play();
     /**
      * when all client stopped play, disconnect to origin.
      */
@@ -212,7 +216,7 @@ public:
     /**
      * when ingester start to play stream.
      */
-    virtual int on_ingest_play();
+    virtual srs_error_t on_ingest_play();
 };
 
 /**
@@ -230,16 +234,16 @@ public:
 public:
     virtual void set_queue_size(double queue_size);
 public:
-    virtual int initialize(SrsSource* source, SrsRequest* req);
+    virtual srs_error_t initialize(SrsSource* source, SrsRequest* req);
     virtual bool can_publish();
     /**
      * when client publish stream on edge.
      */
-    virtual int on_client_publish();
+    virtual srs_error_t on_client_publish();
     /**
      * proxy publish stream to edge
      */
-    virtual int on_proxy_publish(SrsCommonMessage* msg);
+    virtual srs_error_t on_proxy_publish(SrsCommonMessage* msg);
     /**
      * proxy unpublish stream to edge.
      */

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -67,7 +67,7 @@ public:
     SrsSimpleRtmpClient(std::string u, int64_t ctm, int64_t stm);
     virtual ~SrsSimpleRtmpClient();
 protected:
-    virtual int connect_app();
+    virtual srs_error_t connect_app();
 };
 
 /**
@@ -103,6 +103,7 @@ private:
     SrsBandwidth* bandwidth;
     SrsSecurity* security;
     // the wakable handler, maybe NULL.
+    // TODO: FIXME: Should refine the state for receiving thread.
     ISrsWakable* wakable;
     // elapse duration in ms
     // for live play duration, for instance, rtmpdump to record.
@@ -127,19 +128,19 @@ private:
     // About the rtmp client.
     SrsClientInfo* info;
 public:
-    SrsRtmpConn(SrsServer* svr, st_netfd_t c, std::string cip);
+    SrsRtmpConn(SrsServer* svr, srs_netfd_t c, std::string cip);
     virtual ~SrsRtmpConn();
 public:
     virtual void dispose();
 protected:
-    virtual int do_cycle();
+    virtual srs_error_t do_cycle();
 // interface ISrsReloadHandler
 public:
-    virtual int on_reload_vhost_removed(std::string vhost);
-    virtual int on_reload_vhost_play(std::string vhost);
-    virtual int on_reload_vhost_tcp_nodelay(std::string vhost);
-    virtual int on_reload_vhost_realtime(std::string vhost);
-    virtual int on_reload_vhost_publish(std::string vhost);
+    virtual srs_error_t on_reload_vhost_removed(std::string vhost);
+    virtual srs_error_t on_reload_vhost_play(std::string vhost);
+    virtual srs_error_t on_reload_vhost_tcp_nodelay(std::string vhost);
+    virtual srs_error_t on_reload_vhost_realtime(std::string vhost);
+    virtual srs_error_t on_reload_vhost_publish(std::string vhost);
 // interface IKbpsDelta
 public:
     virtual void resample();
@@ -148,36 +149,36 @@ public:
     virtual void cleanup();
 private:
     // when valid and connected to vhost/app, service the client.
-    virtual int service_cycle();
+    virtual srs_error_t service_cycle();
     // stream(play/publish) service cycle, identify client first.
-    virtual int stream_service_cycle();
-    virtual int check_vhost(bool try_default_vhost);
-    virtual int playing(SrsSource* source);
-    virtual int do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRecvThread* trd);
-    virtual int publishing(SrsSource* source);
-    virtual int do_publishing(SrsSource* source, SrsPublishRecvThread* trd);
-    virtual int acquire_publish(SrsSource* source);
+    virtual srs_error_t stream_service_cycle();
+    virtual srs_error_t check_vhost(bool try_default_vhost);
+    virtual srs_error_t playing(SrsSource* source);
+    virtual srs_error_t do_playing(SrsSource* source, SrsConsumer* consumer, SrsQueueRecvThread* trd);
+    virtual srs_error_t publishing(SrsSource* source);
+    virtual srs_error_t do_publishing(SrsSource* source, SrsPublishRecvThread* trd);
+    virtual srs_error_t acquire_publish(SrsSource* source);
     virtual void release_publish(SrsSource* source);
-    virtual int handle_publish_message(SrsSource* source, SrsCommonMessage* msg);
-    virtual int process_publish_message(SrsSource* source, SrsCommonMessage* msg);
-    virtual int process_play_control_msg(SrsConsumer* consumer, SrsCommonMessage* msg);
+    virtual srs_error_t handle_publish_message(SrsSource* source, SrsCommonMessage* msg);
+    virtual srs_error_t process_publish_message(SrsSource* source, SrsCommonMessage* msg);
+    virtual srs_error_t process_play_control_msg(SrsConsumer* consumer, SrsCommonMessage* msg);
     virtual void change_mw_sleep(int sleep_ms);
     virtual void set_sock_options();
 private:
-    virtual int check_edge_token_traverse_auth();
-    virtual int do_token_traverse_auth(SrsRtmpClient* client);
+    virtual srs_error_t check_edge_token_traverse_auth();
+    virtual srs_error_t do_token_traverse_auth(SrsRtmpClient* client);
 private:
     /**
      * when the connection disconnect, call this method.
      * e.g. log msg of connection and report to other system.
      */
-    virtual int on_disconnect();
+    virtual srs_error_t on_disconnect();
 private:
-    virtual int http_hooks_on_connect();
+    virtual srs_error_t http_hooks_on_connect();
     virtual void http_hooks_on_close();
-    virtual int http_hooks_on_publish();
+    virtual srs_error_t http_hooks_on_publish();
     virtual void http_hooks_on_unpublish();
-    virtual int http_hooks_on_play();
+    virtual srs_error_t http_hooks_on_play();
     virtual void http_hooks_on_stop();
 };
 

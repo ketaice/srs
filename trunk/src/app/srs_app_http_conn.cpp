@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -59,8 +59,7 @@ using namespace std;
 #include <srs_app_utility.hpp>
 #include <srs_app_st.hpp>
 
-SrsHttpConn::SrsHttpConn(IConnectionManager* cm, st_netfd_t fd, ISrsHttpServeMux* m, string cip)
-: SrsConnection(cm, fd, cip)
+SrsHttpConn::SrsHttpConn(IConnectionManager* cm, srs_netfd_t fd, ISrsHttpServeMux* m, string cip) : SrsConnection(cm, fd, cip)
 {
     parser = new SrsHttpParser();
     cors = new SrsHttpCorsMux();
@@ -95,16 +94,15 @@ void SrsHttpConn::cleanup()
     // TODO: FIXME: implements it
 }
 
-int SrsHttpConn::do_cycle()
+srs_error_t SrsHttpConn::do_cycle()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_trace("HTTP client ip=%s", ip.c_str());
     
     // initialize parser
-    if ((ret = parser->initialize(HTTP_REQUEST, false)) != ERROR_SUCCESS) {
-        srs_error("http initialize http parser failed. ret=%d", ret);
-        return ret;
+    if ((err = parser->initialize(HTTP_REQUEST, false)) != srs_success) {
+        return srs_error_wrap(err, "init parser");
     }
     
     // set the recv timeout, for some clients never disconnect the connection.
@@ -116,38 +114,40 @@ int SrsHttpConn::do_cycle()
     
     // initialize the cors, which will proxy to mux.
     bool crossdomain_enabled = _srs_config->get_http_stream_crossdomain();
-    if ((ret = cors->initialize(http_mux, crossdomain_enabled)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = cors->initialize(http_mux, crossdomain_enabled)) != srs_success) {
+        return srs_error_wrap(err, "init cors");
     }
     
     // process http messages.
-    while (!disposed) {
+    while ((err = trd->pull()) == srs_success) {
         ISrsHttpMessage* req = NULL;
         
         // get a http message
-        if ((ret = parser->parse_message(skt, this, &req)) != ERROR_SUCCESS) {
+        if ((err = parser->parse_message(skt, &req)) != srs_success) {
             break;
         }
         
         // if SUCCESS, always NOT-NULL.
-        srs_assert(req);
-        
         // always free it in this scope.
+        srs_assert(req);
         SrsAutoFree(ISrsHttpMessage, req);
         
-        // get the last request, for report the info of request on connection disconnect.
-        delete last_req;
-        SrsHttpMessage* hreq = dynamic_cast<SrsHttpMessage*>(req);
+        // Attach owner connection to message.
+        SrsHttpMessage* hreq = (SrsHttpMessage*)req;
+        hreq->set_connection(this);
+        
+        // copy request to last request object.
+        srs_freep(last_req);
         last_req = hreq->to_request(hreq->host());
         
         // may should discard the body.
-        if ((ret = on_got_http_message(req)) != ERROR_SUCCESS) {
+        if ((err = on_got_http_message(req)) != srs_success) {
             break;
         }
         
         // ok, handle http request.
         SrsHttpResponseWriter writer(skt);
-        if ((ret = process_request(&writer, req)) != ERROR_SUCCESS) {
+        if ((err = process_request(&writer, req)) != srs_success) {
             break;
         }
         
@@ -158,53 +158,50 @@ int SrsHttpConn::do_cycle()
         }
     }
     
-    int disc_ret = ERROR_SUCCESS;
-    if ((disc_ret = on_disconnect(last_req)) != ERROR_SUCCESS) {
-        srs_warn("connection on disconnect peer failed, but ignore this error. disc_ret=%d, ret=%d", disc_ret, ret);
+    srs_error_t r0 = srs_success;
+    if ((r0 = on_disconnect(last_req)) != srs_success) {
+        err = srs_error_wrap(err, "on disconnect %s", srs_error_desc(r0).c_str());
+        srs_freep(r0);
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpConn::process_request(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpConn::process_request(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_trace("HTTP %s %s, content-length=%" PRId64 "",
-              r->method_str().c_str(), r->url().c_str(), r->content_length());
+        r->method_str().c_str(), r->url().c_str(), r->content_length());
     
     // use cors server mux to serve http request, which will proxy to http_remux.
-    if ((ret = cors->serve_http(w, r)) != ERROR_SUCCESS) {
-        if (!srs_is_client_gracefully_close(ret)) {
-            srs_error("serve http msg failed. ret=%d", ret);
-        }
-        return ret;
+    if ((err = cors->serve_http(w, r)) != srs_success) {
+        return srs_error_wrap(err, "mux serve");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpConn::on_disconnect(SrsRequest* req)
+srs_error_t SrsHttpConn::on_disconnect(SrsRequest* req)
 {
-    int ret = ERROR_SUCCESS;
-    // TODO: implements it.s
-    return ret;
+    // TODO: FIXME: Implements it.
+    return srs_success;
 }
 
-int SrsHttpConn::on_reload_http_stream_crossdomain()
+srs_error_t SrsHttpConn::on_reload_http_stream_crossdomain()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // initialize the cors, which will proxy to mux.
     bool crossdomain_enabled = _srs_config->get_http_stream_crossdomain();
-    if ((ret = cors->initialize(http_mux, crossdomain_enabled)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = cors->initialize(http_mux, crossdomain_enabled)) != srs_success) {
+        return srs_error_wrap(err, "init mux");
     }
     
-    return ret;
+    return err;
 }
 
-SrsResponseOnlyHttpConn::SrsResponseOnlyHttpConn(IConnectionManager* cm, st_netfd_t fd, ISrsHttpServeMux* m, string cip)
+SrsResponseOnlyHttpConn::SrsResponseOnlyHttpConn(IConnectionManager* cm, srs_netfd_t fd, ISrsHttpServeMux* m, string cip)
 : SrsHttpConn(cm, fd, m, cip)
 {
 }
@@ -213,43 +210,47 @@ SrsResponseOnlyHttpConn::~SrsResponseOnlyHttpConn()
 {
 }
 
-int SrsResponseOnlyHttpConn::pop_message(ISrsHttpMessage** preq)
+srs_error_t SrsResponseOnlyHttpConn::pop_message(ISrsHttpMessage** preq)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsStSocket skt;
     
-    if ((ret = skt.initialize(stfd)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = skt.initialize(stfd)) != srs_success) {
+        return srs_error_wrap(err, "init socket");
     }
     
-    if ((ret = parser->parse_message(&skt, this, preq)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = parser->parse_message(&skt, preq)) != srs_success) {
+        return srs_error_wrap(err, "parse message");
     }
     
-    return ret;
+    // Attach owner connection to message.
+    SrsHttpMessage* hreq = (SrsHttpMessage*)(*preq);
+    hreq->set_connection(this);
+    
+    return err;
 }
 
-int SrsResponseOnlyHttpConn::on_got_http_message(ISrsHttpMessage* msg)
+srs_error_t SrsResponseOnlyHttpConn::on_got_http_message(ISrsHttpMessage* msg)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     ISrsHttpResponseReader* br = msg->body_reader();
     
     // when not specified the content length, ignore.
     if (msg->content_length() == -1) {
-        return ret;
+        return err;
     }
     
     // drop all request body.
+    char body[4096];
     while (!br->eof()) {
-        char body[4096];
-        if ((ret = br->read(body, 4096, NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = br->read(body, 4096, NULL)) != srs_success) {
+            return srs_error_wrap(err, "read response");
         }
     }
     
-    return ret;
+    return err;
 }
 
 SrsHttpServer::SrsHttpServer(SrsServer* svr)
@@ -265,37 +266,43 @@ SrsHttpServer::~SrsHttpServer()
     srs_freep(http_static);
 }
 
-int SrsHttpServer::initialize()
+srs_error_t SrsHttpServer::initialize()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // for SRS go-sharp to detect the status of HTTP server of SRS HTTP FLV Cluster.
-    if ((ret = http_static->mux.handle("/api/v1/versions", new SrsGoApiVersion())) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = http_static->mux.handle("/api/v1/versions", new SrsGoApiVersion())) != srs_success) {
+        return srs_error_wrap(err, "handle versin");
     }
     
-    if ((ret = http_stream->initialize()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = http_stream->initialize()) != srs_success) {
+        return srs_error_wrap(err, "http stream");
     }
     
-    if ((ret = http_static->initialize()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = http_static->initialize()) != srs_success) {
+        return srs_error_wrap(err, "http static");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsHttpServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsHttpServer::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
+    srs_error_t err = srs_success;
+    
     // try http stream first.
-    if (http_stream->mux.can_serve(r)) {
+    ISrsHttpHandler* h = NULL;
+    if ((err = http_stream->mux.find_handler(r, &h)) != srs_success) {
+        return srs_error_wrap(err, "find handler");
+    }
+    if (!h->is_not_found()) {
         return http_stream->mux.serve_http(w, r);
     }
     
     return http_static->mux.serve_http(w, r);
 }
 
-int SrsHttpServer::http_mount(SrsSource* s, SrsRequest* r)
+srs_error_t SrsHttpServer::http_mount(SrsSource* s, SrsRequest* r)
 {
     return http_stream->http_mount(s, r);
 }

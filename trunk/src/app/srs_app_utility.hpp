@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -76,7 +76,7 @@ extern std::string srs_path_build_timestamp(std::string template_path);
  * @param pid the pid to kill. ignore for -1. set to -1 when killed.
  * @return an int error code.
  */
-extern int srs_kill_forced(int& pid);
+extern srs_error_t srs_kill_forced(int& pid);
 
 // current process resouce usage.
 // @see: man getrusage

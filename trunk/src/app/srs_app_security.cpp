@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -36,35 +36,36 @@ SrsSecurity::~SrsSecurity()
 {
 }
 
-int SrsSecurity::check(SrsRtmpConnType type, string ip, SrsRequest* req)
+srs_error_t SrsSecurity::check(SrsRtmpConnType type, string ip, SrsRequest* req)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // allow all if security disabled.
     if (!_srs_config->get_security_enabled(req->vhost)) {
-        return ret;
+        return err;
     }
     
     // default to deny all when security enabled.
-    ret = ERROR_SYSTEM_SECURITY;
+    err = srs_error_new(ERROR_SYSTEM_SECURITY, "allowed");
     
     // rules to apply
     SrsConfDirective* rules = _srs_config->get_security_rules(req->vhost);
     if (!rules) {
-        return ret;
+        return err;
     }
     
     // allow if matches allow strategy.
     if (allow_check(rules, type, ip) == ERROR_SYSTEM_SECURITY_ALLOW) {
-        ret = ERROR_SUCCESS;
+        srs_error_reset(err);
     }
     
     // deny if matches deny strategy.
     if (deny_check(rules, type, ip) == ERROR_SYSTEM_SECURITY_DENY) {
-        ret = ERROR_SYSTEM_SECURITY_DENY;
+        srs_error_reset(err);
+        return srs_error_new(ERROR_SYSTEM_SECURITY_DENY, "denied");
     }
     
-    return ret;
+    return err;
 }
 
 int SrsSecurity::allow_check(SrsConfDirective* rules, SrsRtmpConnType type, std::string ip)

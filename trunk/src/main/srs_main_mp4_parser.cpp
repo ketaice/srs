@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -40,19 +40,26 @@ using namespace std;
 ISrsLog* _srs_log = new SrsConsoleLog(SrsLogLevelTrace, false);
 ISrsThreadContext* _srs_context = new SrsThreadContext();
 
-int parse(std::string mp4_file)
+int parse(std::string mp4_file, bool verbose)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsFileReader fr;
-    if ((ret = fr.open(mp4_file)) != ERROR_SUCCESS) {
+    if ((err = fr.open(mp4_file)) != srs_success) {
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("Open MP4 file failed, ret=%d", ret);
         return ret;
     }
     srs_trace("MP4 file open success");
     
     SrsMp4BoxReader br;
-    if ((ret = br.initialize(&fr)) != ERROR_SUCCESS) {
+    if ((err = br.initialize(&fr)) != srs_success) {
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("Open MP4 box reader failed, ret=%d", ret);
         return ret;
     }
@@ -61,11 +68,15 @@ int parse(std::string mp4_file)
     SrsSimpleStream* stream = new SrsSimpleStream();
     SrsAutoFree(SrsSimpleStream, stream);
     
+    fprintf(stderr, "\n%s\n", mp4_file.c_str());
     while (true) {
         SrsMp4Box* box = NULL;
         SrsAutoFree(SrsMp4Box, box);
         
-        if ((ret = br.read(stream, &box)) != ERROR_SUCCESS) {
+        if ((err = br.read(stream, &box)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             if (ret != ERROR_SYSTEM_FILE_EOF) {
                 srs_error("Read MP4 box failed, ret=%d", ret);
             } else {
@@ -77,18 +88,28 @@ int parse(std::string mp4_file)
         SrsBuffer* buffer = new SrsBuffer(stream->bytes(), stream->length());
         SrsAutoFree(SrsBuffer, buffer);
         
-        if ((ret = box->decode(buffer)) != ERROR_SUCCESS) {
+        if ((err = box->decode(buffer)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             srs_error("Decode the box failed, ret=%d", ret);
             return ret;
         }
         
-        if ((ret = br.skip(box, stream)) != ERROR_SUCCESS) {
+        if ((err = br.skip(box, stream)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             srs_error("Skip MP4 box failed, ret=%d", ret);
             return ret;
         }
         
+        SrsMp4DumpContext ctx;
+        ctx.level = 1;
+        ctx.summary = !verbose;
+        
         stringstream ss;
-        fprintf(stderr, "%s", box->dumps(ss, 1).str().c_str());
+        fprintf(stderr, "%s", box->dumps(ss, ctx).str().c_str());
     }
     
     return ret;
@@ -102,18 +123,24 @@ int main(int argc, char** argv)
            VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION);
     
     if (argc < 2) {
-        printf("Usage: %s <mp4_file>\n"
+        printf("Usage: %s <mp4_file> [verbose]\n"
                "        mp4_file The MP4 file path to parse.\n"
+               "        verbose Whether print verbose of box.\n"
                "For example:\n"
-               "        %s doc/source.200kbps.768x320.mp4\n",
-               argv[0], argv[0]);
+               "        %s doc/source.200kbps.768x320.mp4\n"
+               "        %s doc/source.200kbps.768x320.mp4 verbose\n",
+               argv[0], argv[0], argv[0]);
         
         exit(-1);
     }
     string mp4_file = argv[1];
-    srs_trace("Parse MP4 file %s", mp4_file.c_str());
+    bool verbose = false;
+    if (argc > 2) {
+        verbose = true;
+    }
+    srs_trace("Parse MP4 file %s, verbose=%d", mp4_file.c_str(), verbose);
     
-    ret = parse(mp4_file);
+    ret = parse(mp4_file, verbose);
     
     if (ret == ERROR_SYSTEM_FILE_EOF) {
         srs_trace("Parse complete");

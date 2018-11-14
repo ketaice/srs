@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -54,7 +54,7 @@ SrsRtpConn::SrsRtpConn(SrsRtspConn* r, int p, int sid)
     _port = p;
     stream_id = sid;
     // TODO: support listen at <[ip:]port>
-    listener = new SrsUdpListener(this, "0.0.0.0", p);
+    listener = new SrsUdpListener(this, srs_any_address4listener(), p);
     cache = new SrsRtpPacket();
     pprint = SrsPithyPrint::create_caster();
 }
@@ -71,28 +71,23 @@ int SrsRtpConn::port()
     return _port;
 }
 
-int SrsRtpConn::listen()
+srs_error_t SrsRtpConn::listen()
 {
     return listener->listen();
 }
 
-int SrsRtpConn::on_udp_packet(sockaddr_in* from, char* buf, int nb_buf)
+srs_error_t SrsRtpConn::on_udp_packet(const sockaddr* from, const int fromlen, char* buf, int nb_buf)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     pprint->elapse();
     
     if (true) {
-        SrsBuffer stream;
-        
-        if ((ret = stream.initialize(buf, nb_buf)) != ERROR_SUCCESS) {
-            return ret;
-        }
+        SrsBuffer stream(buf, nb_buf);
         
         SrsRtpPacket pkt;
-        if ((ret = pkt.decode(&stream)) != ERROR_SUCCESS) {
-            srs_error("rtsp: decode rtp packet failed. ret=%d", ret);
-            return ret;
+        if ((err = pkt.decode(&stream)) != srs_success) {
+            return srs_error_wrap(err, "decode");
         }
         
         if (pkt.chunked) {
@@ -106,7 +101,7 @@ int SrsRtpConn::on_udp_packet(sockaddr_in* from, char* buf, int nb_buf)
                           nb_buf, pprint->age(), cache->version, cache->payload_type, cache->sequence_number, cache->timestamp, cache->ssrc,
                           cache->payload->length()
                           );
-                return ret;
+                return err;
             }
         } else {
             srs_freep(cache);
@@ -125,12 +120,11 @@ int SrsRtpConn::on_udp_packet(sockaddr_in* from, char* buf, int nb_buf)
     // always free it.
     SrsAutoFree(SrsRtpPacket, cache);
     
-    if ((ret = rtsp->on_rtp_packet(cache, stream_id)) != ERROR_SUCCESS) {
-        srs_error("rtsp: process rtp packet failed. ret=%d", ret);
-        return ret;
+    if ((err = rtsp->on_rtp_packet(cache, stream_id)) != srs_success) {
+        return srs_error_wrap(err, "process rtp packet");
     }
     
-    return ret;
+    return err;
 }
 
 SrsRtspAudioCache::SrsRtspAudioCache()
@@ -162,9 +156,9 @@ int64_t SrsRtspJitter::timestamp()
     return pts;
 }
 
-int SrsRtspJitter::correct(int64_t& ts)
+srs_error_t SrsRtspJitter::correct(int64_t& ts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (previous_timestamp == 0) {
         previous_timestamp = ts;
@@ -180,10 +174,10 @@ int SrsRtspJitter::correct(int64_t& ts)
     ts = pts + delta;
     pts = ts;
     
-    return ret;
+    return err;
 }
 
-SrsRtspConn::SrsRtspConn(SrsRtspCaster* c, st_netfd_t fd, std::string o)
+SrsRtspConn::SrsRtspConn(SrsRtspCaster* c, srs_netfd_t fd, std::string o)
 {
     output_template = o;
     
@@ -195,7 +189,7 @@ SrsRtspConn::SrsRtspConn(SrsRtspCaster* c, st_netfd_t fd, std::string o)
     stfd = fd;
     skt = new SrsStSocket();
     rtsp = new SrsRtspStack(skt);
-    trd = new SrsOneCycleThread("rtsp", this);
+    trd = new SrsSTCoroutine("rtsp", this);
     
     req = NULL;
     sdk = NULL;
@@ -230,32 +224,38 @@ SrsRtspConn::~SrsRtspConn()
     srs_freep(acache);
 }
 
-int SrsRtspConn::serve()
+srs_error_t SrsRtspConn::serve()
 {
-    int ret = ERROR_SUCCESS;
-    if ((ret = skt->initialize(stfd)) != ERROR_SUCCESS) {
-        return ret;
+    srs_error_t err = srs_success;
+    
+    if ((err = skt->initialize(stfd)) != srs_success) {
+        return srs_error_wrap(err, "socket initialize");
     }
     
-    return trd->start();
+    if ((err = trd->start()) != srs_success) {
+        return srs_error_wrap(err, "rtsp connection");
+    }
+    
+    return err;
 }
 
-int SrsRtspConn::do_cycle()
+srs_error_t SrsRtspConn::do_cycle()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // retrieve ip of client.
-    std::string ip = srs_get_peer_ip(st_netfd_fileno(stfd));
+    std::string ip = srs_get_peer_ip(srs_netfd_fileno(stfd));
     srs_trace("rtsp: serve %s", ip.c_str());
     
     // consume all rtsp messages.
-    for (;;) {
+    while (true) {
+        if ((err = trd->pull()) != srs_success) {
+            return srs_error_wrap(err, "rtsp cycle");
+        }
+        
         SrsRtspRequest* req = NULL;
-        if ((ret = rtsp->recv_message(&req)) != ERROR_SUCCESS) {
-            if (!srs_is_client_gracefully_close(ret)) {
-                srs_error("rtsp: recv request failed. ret=%d", ret);
-            }
-            return ret;
+        if ((err = rtsp->recv_message(&req)) != srs_success) {
+            return srs_error_wrap(err, "recv message");
         }
         SrsAutoFree(SrsRtspRequest, req);
         srs_info("rtsp: got rtsp request");
@@ -263,11 +263,8 @@ int SrsRtspConn::do_cycle()
         if (req->is_options()) {
             SrsRtspOptionsResponse* res = new SrsRtspOptionsResponse((int)req->seq);
             res->session = session;
-            if ((ret = rtsp->send_message(res)) != ERROR_SUCCESS) {
-                if (!srs_is_client_gracefully_close(ret)) {
-                    srs_error("rtsp: send OPTIONS response failed. ret=%d", ret);
-                }
-                return ret;
+            if ((err = rtsp->send_message(res)) != srs_success) {
+                return  srs_error_wrap(err, "response option");
             }
         } else if (req->is_announce()) {
             if (rtsp_tcUrl.empty()) {
@@ -297,18 +294,14 @@ int SrsRtspConn::do_cycle()
             
             SrsRtspResponse* res = new SrsRtspResponse((int)req->seq);
             res->session = session;
-            if ((ret = rtsp->send_message(res)) != ERROR_SUCCESS) {
-                if (!srs_is_client_gracefully_close(ret)) {
-                    srs_error("rtsp: send ANNOUNCE response failed. ret=%d", ret);
-                }
-                return ret;
+            if ((err = rtsp->send_message(res)) != srs_success) {
+                return srs_error_wrap(err, "response announce");
             }
         } else if (req->is_setup()) {
             srs_assert(req->transport);
             int lpm = 0;
-            if ((ret = caster->alloc_port(&lpm)) != ERROR_SUCCESS) {
-                srs_error("rtsp: alloc port failed. ret=%d", ret);
-                return ret;
+            if ((err = caster->alloc_port(&lpm)) != srs_success) {
+                return srs_error_wrap(err, "alloc port");
             }
             
             SrsRtpConn* rtp = NULL;
@@ -319,16 +312,14 @@ int SrsRtspConn::do_cycle()
                 srs_freep(audio_rtp);
                 rtp = audio_rtp = new SrsRtpConn(this, lpm, audio_id);
             }
-            if ((ret = rtp->listen()) != ERROR_SUCCESS) {
-                srs_error("rtsp: rtp listen at port=%d failed. ret=%d", lpm, ret);
-                return ret;
+            if ((err = rtp->listen()) != srs_success) {
+                return srs_error_wrap(err, "rtp listen");
             }
             srs_trace("rtsp: #%d %s over %s/%s/%s %s client-port=%d-%d, server-port=%d-%d",
-                      req->stream_id, (req->stream_id == video_id)? "Video":"Audio",
-                      req->transport->transport.c_str(), req->transport->profile.c_str(), req->transport->lower_transport.c_str(),
-                      req->transport->cast_type.c_str(), req->transport->client_port_min, req->transport->client_port_max,
-                      lpm, lpm + 1
-                      );
+                req->stream_id, (req->stream_id == video_id)? "Video":"Audio",
+                req->transport->transport.c_str(), req->transport->profile.c_str(), req->transport->lower_transport.c_str(),
+                req->transport->cast_type.c_str(), req->transport->client_port_min, req->transport->client_port_max,
+                lpm, lpm + 1);
             
             // create session.
             if (session.empty()) {
@@ -341,42 +332,35 @@ int SrsRtspConn::do_cycle()
             res->local_port_min = lpm;
             res->local_port_max = lpm + 1;
             res->session = session;
-            if ((ret = rtsp->send_message(res)) != ERROR_SUCCESS) {
-                if (!srs_is_client_gracefully_close(ret)) {
-                    srs_error("rtsp: send SETUP response failed. ret=%d", ret);
-                }
-                return ret;
+            if ((err = rtsp->send_message(res)) != srs_success) {
+                return srs_error_wrap(err, "response setup");
             }
         } else if (req->is_record()) {
             SrsRtspResponse* res = new SrsRtspResponse((int)req->seq);
             res->session = session;
-            if ((ret = rtsp->send_message(res)) != ERROR_SUCCESS) {
-                if (!srs_is_client_gracefully_close(ret)) {
-                    srs_error("rtsp: send SETUP response failed. ret=%d", ret);
-                }
-                return ret;
+            if ((err = rtsp->send_message(res)) != srs_success) {
+                return srs_error_wrap(err, "response record");
             }
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::on_rtp_packet(SrsRtpPacket* pkt, int stream_id)
+srs_error_t SrsRtspConn::on_rtp_packet(SrsRtpPacket* pkt, int stream_id)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // ensure rtmp connected.
-    if ((ret = connect()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = connect()) != srs_success) {
+        return srs_error_wrap(err, "connect");
     }
     
     if (stream_id == video_id) {
         // rtsp tbn is ts tbn.
         int64_t pts = pkt->timestamp;
-        if ((ret = vjitter->correct(pts)) != ERROR_SUCCESS) {
-            srs_error("rtsp: correct by jitter failed. ret=%d", ret);
-            return ret;
+        if ((err = vjitter->correct(pts)) != srs_success) {
+            return srs_error_wrap(err, "jitter");
         }
         
         // TODO: FIXME: set dts to pts, please finger out the right dts.
@@ -386,42 +370,31 @@ int SrsRtspConn::on_rtp_packet(SrsRtpPacket* pkt, int stream_id)
     } else {
         // rtsp tbn is ts tbn.
         int64_t pts = pkt->timestamp;
-        if ((ret = ajitter->correct(pts)) != ERROR_SUCCESS) {
-            srs_error("rtsp: correct by jitter failed. ret=%d", ret);
-            return ret;
+        if ((err = ajitter->correct(pts)) != srs_success) {
+            return srs_error_wrap(err, "jitter");
         }
         
         return on_rtp_audio(pkt, pts);
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::cycle()
+srs_error_t SrsRtspConn::cycle()
 {
     // serve the rtsp client.
-    int ret = do_cycle();
+    srs_error_t err = do_cycle();
     
-    // if socket io error, set to closed.
-    if (srs_is_client_gracefully_close(ret)) {
-        ret = ERROR_SOCKET_CLOSED;
-    }
+    caster->remove(this);
     
-    // success.
-    if (ret == ERROR_SUCCESS) {
+    if (err == srs_success) {
         srs_trace("client finished.");
+    } else if (srs_is_client_gracefully_close(srs_error_code(err))) {
+        srs_warn("client disconnect peer. code=%d", srs_error_code(err));
+        srs_freep(err);
+        err = srs_success;
     }
     
-    // client close peer.
-    if (ret == ERROR_SOCKET_CLOSED) {
-        srs_warn("client disconnect peer. ret=%d", ret);
-    }
-    
-    return ERROR_SUCCESS;
-}
-
-void SrsRtspConn::on_thread_stop()
-{
     if (video_rtp) {
         caster->free_port(video_rtp->port(), video_rtp->port() + 1);
     }
@@ -430,34 +403,34 @@ void SrsRtspConn::on_thread_stop()
         caster->free_port(audio_rtp->port(), audio_rtp->port() + 1);
     }
     
-    caster->remove(this);
+    return err;
 }
 
-int SrsRtspConn::on_rtp_video(SrsRtpPacket* pkt, int64_t dts, int64_t pts)
+srs_error_t SrsRtspConn::on_rtp_video(SrsRtpPacket* pkt, int64_t dts, int64_t pts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = kickoff_audio_cache(pkt, dts)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = kickoff_audio_cache(pkt, dts)) != srs_success) {
+        return srs_error_wrap(err, "kickoff audio cache");
     }
     
     char* bytes = pkt->payload->bytes();
     int length = pkt->payload->length();
     uint32_t fdts = (uint32_t)(dts / 90);
     uint32_t fpts = (uint32_t)(pts / 90);
-    if ((ret = write_h264_ipb_frame(bytes, length, fdts, fpts)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = write_h264_ipb_frame(bytes, length, fdts, fpts)) != srs_success) {
+        return srs_error_wrap(err, "write ibp frame");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::on_rtp_audio(SrsRtpPacket* pkt, int64_t dts)
+srs_error_t SrsRtspConn::on_rtp_audio(SrsRtpPacket* pkt, int64_t dts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = kickoff_audio_cache(pkt, dts)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = kickoff_audio_cache(pkt, dts)) != srs_success) {
+        return srs_error_wrap(err, "kickoff audio cache");
     }
     
     // cache current audio to kickoff.
@@ -468,16 +441,16 @@ int SrsRtspConn::on_rtp_audio(SrsRtpPacket* pkt, int64_t dts)
     pkt->audio = NULL;
     pkt->payload = NULL;
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts)
+srs_error_t SrsRtspConn::kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // nothing to kick off.
     if (!acache->payload) {
-        return ret;
+        return err;
     }
     
     if (dts - acache->dts > 0 && acache->audio->nb_samples > 0) {
@@ -487,8 +460,8 @@ int SrsRtspConn::kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts)
             int nb_frame = acache->audio->samples[i].size;
             int64_t timestamp = (acache->dts + delta * i) / 90;
             acodec->aac_packet_type = 1;
-            if ((ret = write_audio_raw_frame(frame, nb_frame, acodec, (uint32_t)timestamp)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = write_audio_raw_frame(frame, nb_frame, acodec, (uint32_t)timestamp)) != srs_success) {
+                return srs_error_wrap(err, "write audio raw frame");
             }
         }
     }
@@ -497,19 +470,19 @@ int SrsRtspConn::kickoff_audio_cache(SrsRtpPacket* pkt, int64_t dts)
     srs_freep(acache->audio);
     srs_freep(acache->payload);
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::write_sequence_header()
+srs_error_t SrsRtspConn::write_sequence_header()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // use the current dts.
     int64_t dts = vjitter->timestamp() / 90;
     
     // send video sps/pps
-    if ((ret = write_h264_sps_pps((uint32_t)dts, (uint32_t)dts)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = write_h264_sps_pps((uint32_t)dts, (uint32_t)dts)) != srs_success) {
+        return srs_error_wrap(err, "write sps/pps");
     }
     
     // generate audio sh by audio specific config.
@@ -519,8 +492,8 @@ int SrsRtspConn::write_sequence_header()
         SrsFormat* format = new SrsFormat();
         SrsAutoFree(SrsFormat, format);
         
-        if ((ret = format->on_aac_sequence_header((char*)sh.c_str(), (int)sh.length())) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = format->on_aac_sequence_header((char*)sh.c_str(), (int)sh.length())) != srs_success) {
+            return srs_error_wrap(err, "on aac sequence header");
         }
         
         SrsAudioCodecConfig* dec = format->acodec;
@@ -550,22 +523,22 @@ int SrsRtspConn::write_sequence_header()
                 break;
         };
         
-        if ((ret = write_audio_raw_frame((char*)sh.data(), (int)sh.length(), acodec, (uint32_t)dts)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = write_audio_raw_frame((char*)sh.data(), (int)sh.length(), acodec, (uint32_t)dts)) != srs_success) {
+            return srs_error_wrap(err, "write audio raw frame");
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::write_h264_sps_pps(uint32_t dts, uint32_t pts)
+srs_error_t SrsRtspConn::write_h264_sps_pps(uint32_t dts, uint32_t pts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // h264 raw to h264 packet.
     std::string sh;
-    if ((ret = avc->mux_sequence_header(h264_sps, h264_pps, dts, pts, sh)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = avc->mux_sequence_header(h264_sps, h264_pps, dts, pts, sh)) != srs_success) {
+        return srs_error_wrap(err, "mux sequence header");
     }
     
     // h264 packet to flv packet.
@@ -573,22 +546,22 @@ int SrsRtspConn::write_h264_sps_pps(uint32_t dts, uint32_t pts)
     int8_t avc_packet_type = SrsVideoAvcFrameTraitSequenceHeader;
     char* flv = NULL;
     int nb_flv = 0;
-    if ((ret = avc->mux_avc2flv(sh, frame_type, avc_packet_type, dts, pts, &flv, &nb_flv)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = avc->mux_avc2flv(sh, frame_type, avc_packet_type, dts, pts, &flv, &nb_flv)) != srs_success) {
+        return srs_error_wrap(err, "mux avc to flv");
     }
     
     // the timestamp in rtmp message header is dts.
     uint32_t timestamp = dts;
-    if ((ret = rtmp_write_packet(SrsFrameTypeVideo, timestamp, flv, nb_flv)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = rtmp_write_packet(SrsFrameTypeVideo, timestamp, flv, nb_flv)) != srs_success) {
+        return srs_error_wrap(err, "write packet");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts, uint32_t pts)
+srs_error_t SrsRtspConn::write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts, uint32_t pts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // 5bits, 7.3.1 NAL unit syntax,
     // ISO_IEC_14496-10-AVC-2003.pdf, page 44.
@@ -602,15 +575,15 @@ int SrsRtspConn::write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts,
     }
     
     std::string ibp;
-    if ((ret = avc->mux_ipb_frame(frame, frame_size, ibp)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = avc->mux_ipb_frame(frame, frame_size, ibp)) != srs_success) {
+        return srs_error_wrap(err, "mux ibp frame");
     }
     
     int8_t avc_packet_type = SrsVideoAvcFrameTraitNALU;
     char* flv = NULL;
     int nb_flv = 0;
-    if ((ret = avc->mux_avc2flv(ibp, frame_type, avc_packet_type, dts, pts, &flv, &nb_flv)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = avc->mux_avc2flv(ibp, frame_type, avc_packet_type, dts, pts, &flv, &nb_flv)) != srs_success) {
+        return srs_error_wrap(err, "mux avc to flv");
     }
     
     // the timestamp in rtmp message header is dts.
@@ -618,51 +591,50 @@ int SrsRtspConn::write_h264_ipb_frame(char* frame, int frame_size, uint32_t dts,
     return rtmp_write_packet(SrsFrameTypeVideo, timestamp, flv, nb_flv);
 }
 
-int SrsRtspConn::write_audio_raw_frame(char* frame, int frame_size, SrsRawAacStreamCodec* codec, uint32_t dts)
+srs_error_t SrsRtspConn::write_audio_raw_frame(char* frame, int frame_size, SrsRawAacStreamCodec* codec, uint32_t dts)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     char* data = NULL;
     int size = 0;
-    if ((ret = aac->mux_aac2flv(frame, frame_size, codec, dts, &data, &size)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = aac->mux_aac2flv(frame, frame_size, codec, dts, &data, &size)) != srs_success) {
+        return srs_error_wrap(err, "mux aac to flv");
     }
     
     return rtmp_write_packet(SrsFrameTypeAudio, dts, data, size);
 }
 
-int SrsRtspConn::rtmp_write_packet(char type, uint32_t timestamp, char* data, int size)
+srs_error_t SrsRtspConn::rtmp_write_packet(char type, uint32_t timestamp, char* data, int size)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = connect()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = connect()) != srs_success) {
+        return srs_error_wrap(err, "connect");
     }
     
     SrsSharedPtrMessage* msg = NULL;
     
-    if ((ret = srs_rtmp_create_msg(type, timestamp, data, size, sdk->sid(), &msg)) != ERROR_SUCCESS) {
-        srs_error("rtsp: create shared ptr msg failed. ret=%d", ret);
-        return ret;
+    if ((err = srs_rtmp_create_msg(type, timestamp, data, size, sdk->sid(), &msg)) != srs_success) {
+        return srs_error_wrap(err, "create message");
     }
     srs_assert(msg);
     
     // send out encoded msg.
-    if ((ret = sdk->send_and_free_message(msg)) != ERROR_SUCCESS) {
+    if ((err = sdk->send_and_free_message(msg)) != srs_success) {
         close();
-        return ret;
+        return srs_error_wrap(err, "write message");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsRtspConn::connect()
+srs_error_t SrsRtspConn::connect()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // Ignore when connected.
     if (sdk) {
-        return ret;
+        return err;
     }
     
     // generate rtmp url to connect to.
@@ -670,8 +642,8 @@ int SrsRtspConn::connect()
     if (!req) {
         std::string schema, host, vhost, app, param;
         int port;
-        srs_discovery_tc_url(rtsp_tcUrl, schema, host, vhost, app, port, param);
-        
+        srs_discovery_tc_url(rtsp_tcUrl, schema, host, vhost, app, rtsp_stream, port, param);
+
         // generate output by template.
         std::string output = output_template;
         output = srs_string_replace(output, "[app]", app);
@@ -683,17 +655,15 @@ int SrsRtspConn::connect()
     int64_t sto = SRS_CONSTS_RTMP_PULSE_TMMS;
     sdk = new SrsSimpleRtmpClient(url, cto, sto);
     
-    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+    if ((err = sdk->connect()) != srs_success) {
         close();
-        srs_error("rtsp: connect %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", url.c_str(), cto, sto, ret);
-        return ret;
+        return srs_error_wrap(err, "connect %s failed, cto=%" PRId64 ", sto=%" PRId64, url.c_str(), cto, sto);
     }
     
     // publish.
-    if ((ret = sdk->publish()) != ERROR_SUCCESS) {
+    if ((err = sdk->publish(SRS_CONSTS_RTMP_PROTOCOL_CHUNK_SIZE)) != srs_success) {
         close();
-        srs_error("rtsp: publish %s failed. ret=%d", url.c_str(), ret);
-        return ret;
+        return srs_error_wrap(err, "publish %s failed", url.c_str());
     }
     
     return write_sequence_header();
@@ -723,9 +693,9 @@ SrsRtspCaster::~SrsRtspCaster()
     used_ports.clear();
 }
 
-int SrsRtspCaster::alloc_port(int* pport)
+srs_error_t SrsRtspCaster::alloc_port(int* pport)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // use a pair of port.
     for (int i = local_port_min; i < local_port_max - 1; i += 2) {
@@ -738,7 +708,7 @@ int SrsRtspCaster::alloc_port(int* pport)
     }
     srs_info("rtsp: alloc port=%d-%d", *pport, *pport + 1);
     
-    return ret;
+    return err;
 }
 
 void SrsRtspCaster::free_port(int lpmin, int lpmax)
@@ -749,22 +719,20 @@ void SrsRtspCaster::free_port(int lpmin, int lpmax)
     srs_trace("rtsp: free rtp port=%d-%d", lpmin, lpmax);
 }
 
-int SrsRtspCaster::on_tcp_client(st_netfd_t stfd)
+srs_error_t SrsRtspCaster::on_tcp_client(srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsRtspConn* conn = new SrsRtspConn(this, stfd, output);
     
-    if ((ret = conn->serve()) != ERROR_SUCCESS) {
-        srs_error("rtsp: serve client failed. ret=%d", ret);
+    if ((err = conn->serve()) != srs_success) {
         srs_freep(conn);
-        return ret;
+        return srs_error_wrap(err, "serve conn");
     }
     
     clients.push_back(conn);
-    srs_info("rtsp: start thread to serve client.");
     
-    return ret;
+    return err;
 }
 
 void SrsRtspCaster::remove(SrsRtspConn* conn)

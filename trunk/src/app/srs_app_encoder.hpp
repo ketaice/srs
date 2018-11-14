@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -42,30 +42,31 @@ class SrsFFMPEG;
  * the encoder for a stream,
  * may use multiple ffmpegs to transcode the specified stream.
  */
-class SrsEncoder : public ISrsReusableThreadHandler
+class SrsEncoder : public ISrsCoroutineHandler
 {
 private:
     std::string input_stream_name;
     std::vector<SrsFFMPEG*> ffmpegs;
 private:
-    SrsReusableThread* pthread;
+    SrsCoroutine* trd;
     SrsPithyPrint* pprint;
 public:
     SrsEncoder();
     virtual ~SrsEncoder();
 public:
-    virtual int on_publish(SrsRequest* req);
+    virtual srs_error_t on_publish(SrsRequest* req);
     virtual void on_unpublish();
 // interface ISrsReusableThreadHandler.
 public:
-    virtual int cycle();
-    virtual void on_thread_stop();
+    virtual srs_error_t cycle();
+private:
+    virtual srs_error_t do_cycle();
 private:
     virtual void clear_engines();
     virtual SrsFFMPEG* at(int index);
-    virtual int parse_scope_engines(SrsRequest* req);
-    virtual int parse_ffmpeg(SrsRequest* req, SrsConfDirective* conf);
-    virtual int initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsRequest* req, SrsConfDirective* engine);
+    virtual srs_error_t parse_scope_engines(SrsRequest* req);
+    virtual srs_error_t parse_ffmpeg(SrsRequest* req, SrsConfDirective* conf);
+    virtual srs_error_t initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsRequest* req, SrsConfDirective* engine);
     virtual void show_encode_log_message();
 };
 

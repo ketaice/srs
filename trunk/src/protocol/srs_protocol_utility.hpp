@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -54,8 +54,12 @@ class ISrsProtocolReaderWriter;
  * @param port, for example, 19350
  *       default to 1935 if not specified.
  * param param, for example, vhost=vhost.ossrs.net
+ * @remark The param stream is input and output param, that is:
+ *       input: tcUrl+stream
+ *       output: schema, host, vhost, app, stream, port, param
  */
-extern void srs_discovery_tc_url(std::string tcUrl, std::string& schema, std::string& host, std::string& vhost, std::string& app, int& port, std::string& param);
+extern void srs_discovery_tc_url(std::string tcUrl, std::string& schema, std::string& host, std::string& vhost, std::string& app,
+    std::string& stream, int& port, std::string& param);
 
 // parse query string to map(k,v).
 // must format as key=value&...&keyN=valueN
@@ -67,36 +71,24 @@ extern void srs_parse_query_string(std::string q, std::map<std::string, std::str
 extern void srs_random_generate(char* bytes, int size);
 
 /**
- * generate the tcUrl.
- * @param param, the app parameters in tcUrl. for example, ?key=xxx,vhost=xxx
- * @return the tcUrl generated from ip/vhost/app/port.
- * @remark when vhost equals to __defaultVhost__, use ip as vhost.
- * @remark ignore port if port equals to default port 1935.
+ * generate the tcUrl without param.
+ * @remark Use host as tcUrl.vhost if vhost is default vhost.
  */
-extern std::string srs_generate_tc_url(std::string ip, std::string vhost, std::string app, int port, std::string param);
+extern std::string srs_generate_tc_url(std::string host, std::string vhost, std::string app, int port);
 
 /**
- * srs_detect_tools generate the normal tcUrl
+ * Generate the stream with param.
+ * @remark Append vhost in query string if not default vhost.
  */
-extern std::string srs_generate_normal_tc_url(std::string ip, std::string vhost, std::string app, int port, std::string param);
-
-/**
- * srs_detect_tools generate the normal tcUrl
- */
-extern std::string srs_generate_via_tc_url(std::string ip, std::string vhost, std::string app, int port, std::string param);
-
-/**
- * srs_detect_tools generate the vis/vis2 tcUrl
- */
-extern std::string srs_generate_vis_tc_url(std::string ip, std::string vhost, std::string app, int port, std::string param);
+extern std::string srs_generate_stream_with_query(std::string host, std::string vhost, std::string stream, std::string param);
 
 /**
  * create shared ptr message from bytes.
  * @param data the packet bytes. user should never free it.
  * @param ppmsg output the shared ptr message. user should free it.
  */
-extern int srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsSharedPtrMessage** ppmsg);
-extern int srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsCommonMessage** ppmsg);
+extern srs_error_t srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsSharedPtrMessage** ppmsg);
+extern srs_error_t srs_rtmp_create_msg(char type, uint32_t timestamp, char* data, int size, int stream_id, SrsCommonMessage** ppmsg);
 
 // get the stream identify, vhost/app/stream.
 extern std::string srs_generate_stream_url(std::string vhost, std::string app, std::string stream);
@@ -107,14 +99,18 @@ extern std::string srs_generate_stream_url(std::string vhost, std::string app, s
 //      stream: livestream
 extern void srs_parse_rtmp_url(std::string url, std::string& tcUrl, std::string& stream);
 
-// genereate the rtmp url, for instance, rtmp://server:port/app...vhost...vhost/stream
-extern std::string srs_generate_rtmp_url(std::string server, int port, std::string vhost, std::string app, std::string stream);
+// Genereate the rtmp url, for instance, rtmp://server:port/app/stream?param
+// @remark We always put vhost in param, in the query of url.
+extern std::string srs_generate_rtmp_url(std::string server, int port, std::string host, std::string vhost, std::string app, std::string stream, std::string param);
 
 // write large numbers of iovs.
-extern int srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, ssize_t* pnwrite = NULL);
+extern srs_error_t srs_write_large_iovs(ISrsProtocolReaderWriter* skt, iovec* iovs, int size, ssize_t* pnwrite = NULL);
 
 // join string in vector with indicated separator
 extern std::string srs_join_vector_string(std::vector<std::string>& vs, std::string separator);
+
+// Whether domain is an IPv4 address.
+extern bool srs_is_ipv4(std::string domain);
 
 #endif
 

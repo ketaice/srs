@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -34,6 +34,7 @@
 #include <vector>
 #include <map>
 
+class ISrsWriter;
 class ISrsWriteSeeker;
 class ISrsReadSeeker;
 class SrsMp4TrackBox;
@@ -64,6 +65,11 @@ class SrsMp4DataReferenceBox;
 class SrsMp4SoundMeidaHeaderBox;
 class SrsMp4MovieExtendsBox;
 class SrsMp4TrackExtendsBox;
+class SrsMp4MovieFragmentHeaderBox;
+class SrsMp4TrackFragmentBox;
+class SrsMp4TrackFragmentHeaderBox;
+class SrsMp4TrackFragmentDecodeTimeBox;
+class SrsMp4TrackFragmentRunBox;
 
 /**
  * 4.2 Object Structure
@@ -111,8 +117,14 @@ enum SrsMp4BoxType
     SrsMp4BoxTypeUDTA = 0x75647461, // 'udta'
     SrsMp4BoxTypeMVEX = 0x6d766578, // 'mvex'
     SrsMp4BoxTypeTREX = 0x74726578, // 'trex'
-    
     SrsMp4BoxTypePASP = 0x70617370, // 'pasp'
+    SrsMp4BoxTypeSTYP = 0x73747970, // 'styp'
+    SrsMp4BoxTypeMOOF = 0x6d6f6f66, // 'moof'
+    SrsMp4BoxTypeMFHD = 0x6d666864, // 'mfhd'
+    SrsMp4BoxTypeTRAF = 0x74726166, // 'traf'
+    SrsMp4BoxTypeTFHD = 0x74666864, // 'tfhd'
+    SrsMp4BoxTypeTFDT = 0x74666474, // 'tfdt'
+    SrsMp4BoxTypeTRUN = 0x7472756e, // 'trun'
 };
 
 /**
@@ -141,6 +153,18 @@ enum SrsMp4BoxBrand
     SrsMp4BoxBrandISO5 = 0x69736f35, // 'iso5'
     SrsMp4BoxBrandMP42 = 0x6d703432, // 'mp42'
     SrsMp4BoxBrandDASH = 0x64617368, // 'dash'
+    SrsMp4BoxBrandMSDH = 0x6d736468, // 'msdh'
+};
+
+/**
+ * The context to dump.
+ */
+struct SrsMp4DumpContext
+{
+    int level;
+    bool summary;
+    
+    SrsMp4DumpContext indent();
 };
 
 /**
@@ -193,20 +217,20 @@ public:
     // @return The removed count.
     virtual int remove(SrsMp4BoxType bt);
     // Dumps the box and all contained boxes.
-    virtual std::stringstream& dumps(std::stringstream& ss, int level);
+    virtual std::stringstream& dumps(std::stringstream& ss, SrsMp4DumpContext dc);
     /**
      * Discovery the box from buffer.
      * @param ppbox Output the discoveried box, which user must free it.
      */
-    static int discovery(SrsBuffer* buf, SrsMp4Box** ppbox);
+    static srs_error_t discovery(SrsBuffer* buf, SrsMp4Box** ppbox);
 // Interface ISrsCodec
 public:
     virtual int nb_bytes();
-    virtual int encode(SrsBuffer* buf);
-    virtual int decode(SrsBuffer* buf);
+    virtual srs_error_t encode(SrsBuffer* buf);
+    virtual srs_error_t decode(SrsBuffer* buf);
 protected:
-    virtual int encode_boxes(SrsBuffer* buf);
-    virtual int decode_boxes(SrsBuffer* buf);
+    virtual srs_error_t encode_boxes(SrsBuffer* buf);
+    virtual srs_error_t decode_boxes(SrsBuffer* buf);
 // Sub classes can override these functions for special codec.
 // @remark For mdat box, we use completely different codec.
 protected:
@@ -214,12 +238,16 @@ protected:
     virtual int nb_header();
     // It's not necessary to check the buffer, because we already know the size in parent function,
     // so we have checked the buffer is ok to write.
-    virtual int encode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
     // It's not necessary to check the buffer, unless the box is not only determined by the verson.
     // Generally, it's not necessary, that is, all boxes is determinated by version.
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+    // Whether there contained boxes in header.
+    virtual bool boxes_in_header();
+// @remark internal for template methods.
+public:
     // Dumps the detail of box.
-    virtual std::stringstream& dumps_detail(std::stringstream& ss, int level);
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -238,9 +266,10 @@ public:
     virtual ~SrsMp4FullBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
-    virtual std::stringstream& dumps_detail(std::stringstream& ss, int level);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -265,12 +294,269 @@ public:
     SrsMp4FileTypeBox();
     virtual ~SrsMp4FileTypeBox();
 public:
+    virtual void set_compatible_brands(SrsMp4BoxBrand b0, SrsMp4BoxBrand b1);
     virtual void set_compatible_brands(SrsMp4BoxBrand b0, SrsMp4BoxBrand b1, SrsMp4BoxBrand b2, SrsMp4BoxBrand b3);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
-    virtual std::stringstream& dumps_detail(std::stringstream& ss, int level);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
+};
+
+/**
+ * 8.16.2 Segment Type Box (styp)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 105
+ * If segments are stored in separate files (e.g. on a standard HTTP server) it is recommended that these 
+ * 'segment files' contain a segment-type box, which must be first if present, to enable identification of those files, 
+ * and declaration of the specifications with which they are compliant.
+ */
+class SrsMp4SegmentTypeBox : public SrsMp4FileTypeBox
+{
+public:
+    SrsMp4SegmentTypeBox();
+    virtual ~SrsMp4SegmentTypeBox();
+};
+
+/**
+ * 8.8.4 Movie Fragment Box (moof)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 66
+ * The movie fragments extend the presentation in time. They provide the information that would previously have
+ * been in the Movie Box. The actual samples are in Media Data Boxes, as usual, if they are in the same file.
+ * The data reference index is in the sample description, so it is possible to build incremental presentations
+ * where the media data is in files other than the file containing the Movie Box.
+ */
+class SrsMp4MovieFragmentBox : public SrsMp4Box
+{
+public:
+    SrsMp4MovieFragmentBox();
+    virtual ~SrsMp4MovieFragmentBox();
+public:
+    // Get the header of moof.
+    virtual SrsMp4MovieFragmentHeaderBox* mfhd();
+    virtual void set_mfhd(SrsMp4MovieFragmentHeaderBox* v);
+    // Get the traf.
+    virtual SrsMp4TrackFragmentBox* traf();
+    virtual void set_traf(SrsMp4TrackFragmentBox* v);
+};
+
+/**
+ * 8.8.5 Movie Fragment Header Box (mfhd)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 67
+ * The movie fragment header contains a sequence number, as a safety check. The sequence number usually
+ * starts at 1 and must increase for each movie fragment in the file, in the order in which they occur. This allows
+ * readers to verify integrity of the sequence; it is an error to construct a file where the fragments are out of
+ * sequence.
+ */
+class SrsMp4MovieFragmentHeaderBox : public SrsMp4FullBox
+{
+public:
+    // the ordinal number of this fragment, in increasing order
+    uint32_t sequence_number;
+public:
+    SrsMp4MovieFragmentHeaderBox();
+    virtual ~SrsMp4MovieFragmentHeaderBox();
+protected:
+    virtual int nb_header();
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
+};
+
+/**
+ * 8.8.6 Track Fragment Box (traf)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 67
+ * Within the movie fragment there is a set of track fragments, zero or more per track. The track fragments in
+ * turn contain zero or more track runs, each of which document a contiguous run of samples for that track.
+ * Within these structures, many fields are optional and can be defaulted.
+ */
+class SrsMp4TrackFragmentBox : public SrsMp4Box
+{
+public:
+    SrsMp4TrackFragmentBox();
+    virtual ~SrsMp4TrackFragmentBox();
+public:
+    // Get the tfhd.
+    virtual SrsMp4TrackFragmentHeaderBox* tfhd();
+    virtual void set_tfhd(SrsMp4TrackFragmentHeaderBox* v);
+    // Get the tfdt.
+    virtual SrsMp4TrackFragmentDecodeTimeBox* tfdt();
+    virtual void set_tfdt(SrsMp4TrackFragmentDecodeTimeBox* tfdt);
+    // Get the trun.
+    virtual SrsMp4TrackFragmentRunBox* trun();
+    virtual void set_trun(SrsMp4TrackFragmentRunBox* v);
+};
+
+/**
+ * The tf_flags of tfhd.
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 68
+ */
+enum SrsMp4TfhdFlags
+{
+    /**
+     * indicates the presence of the base-data-offset field. This provides 
+     * an explicit anchor for the data offsets in each track run (see below). If not provided, the base-data-
+     * offset for the first track in the movie fragment is the position of the first byte of the enclosing Movie
+     * Fragment Box, and for second and subsequent track fragments, the default is the end of the data
+     * defined by the preceding fragment. Fragments 'inheriting' their offset in this way must all use
+     * the same data-reference (i.e., the data for these tracks must be in the same file).
+     */
+    SrsMp4TfhdFlagsBaseDataOffset = 0x000001,
+    /**
+     * indicates the presence of this field, which over-rides, in this
+     * fragment, the default set up in the Track Extends Box.
+     */
+    SrsMp4TfhdFlagsSampleDescriptionIndex = 0x000002,
+    SrsMp4TfhdFlagsDefaultSampleDuration = 0x000008,
+    SrsMp4TfhdFlagsDefautlSampleSize = 0x000010,
+    SrsMp4TfhdFlagsDefaultSampleFlags = 0x000020,
+    /**
+     * this indicates that the duration provided in either default-sample-duration,
+     * or by the default-duration in the Track Extends Box, is empty, i.e. that there are no samples for this
+     * time interval. It is an error to make a presentation that has both edit lists in the Movie Box, and empty-
+     * duration fragments.
+     */
+    SrsMp4TfhdFlagsDurationIsEmpty = 0x010000,
+    /**
+     * if base-data-offset-present is zero, this indicates that the base-data-
+     * offset for this track fragment is the position of the first byte of the enclosing Movie Fragment Box.
+     * Support for the default-base-is-moof flag is required under the ‘iso5’ brand, and it shall not be used in
+     * brands or compatible brands earlier than iso5.
+     */
+    SrsMp4TfhdFlagsDefaultBaseIsMoof = 0x020000,
+};
+
+/**
+ * 8.8.7 Track Fragment Header Box (tfhd)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 68
+ * Each movie fragment can add zero or more fragments to each track; and a track fragment can add zero or
+ * more contiguous runs of samples. The track fragment header sets up information and defaults used for those
+ * runs of samples.
+ */
+class SrsMp4TrackFragmentHeaderBox : public SrsMp4FullBox
+{
+public:
+    uint32_t track_id;
+// all the following are optional fields
+public:
+    // the base offset to use when calculating data offsets
+    uint64_t base_data_offset;
+    uint32_t sample_description_index;
+    uint32_t default_sample_duration;
+    uint32_t default_sample_size;
+    uint32_t default_sample_flags;
+public:
+    SrsMp4TrackFragmentHeaderBox();
+    virtual ~SrsMp4TrackFragmentHeaderBox();
+protected:
+    virtual int nb_header();
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
+};
+
+/**
+ * 8.8.12 Track fragment decode time (tfdt)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 72
+ * The Track Fragment Base Media Decode Time Box provides the absolute decode time, measured on
+ * the media timeline, of the first sample in decode order in the track fragment. This can be useful, for example,
+ * when performing random access in a file; it is not necessary to sum the sample durations of all preceding
+ * samples in previous fragments to find this value (where the sample durations are the deltas in the Decoding
+ * Time to Sample Box and the sample_durations in the preceding track runs).
+ */
+class SrsMp4TrackFragmentDecodeTimeBox : public SrsMp4FullBox
+{
+public:
+    uint64_t base_media_decode_time;
+public:
+    SrsMp4TrackFragmentDecodeTimeBox();
+    virtual ~SrsMp4TrackFragmentDecodeTimeBox();
+protected:
+    virtual int nb_header();
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
+};
+
+/**
+ * The tr_flags for trun
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 69
+ */
+enum SrsMp4TrunFlags
+{
+    // data-offset-present.
+    SrsMp4TrunFlagsDataOffset = 0x000001,
+    // this over-rides the default flags for the first sample only. This
+    // makes it possible to record a group of frames where the first is a key and the rest are difference
+    // frames, without supplying explicit flags for every sample. If this flag and field are used, sample-flags
+    // shall not be present.
+    SrsMp4TrunFlagsFirstSample = 0x000004,
+    // indicates that each sample has its own duration, otherwise the default is used.
+    SrsMp4TrunFlagsSampleDuration = 0x000100,
+    // each sample has its own size, otherwise the default is used.
+    SrsMp4TrunFlagsSampleSize = 0x000200,
+    // each sample has its own flags, otherwise the default is used.
+    SrsMp4TrunFlagsSampleFlag = 0x000400,
+    // each sample has a composition time offset (e.g. as used for I/P/B video in MPEG).
+    SrsMp4TrunFlagsSampleCtsOffset = 0x000800,
+};
+
+/**
+ * Entry for trun.
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 69
+ */
+struct SrsMp4TrunEntry
+{
+    SrsMp4FullBox* owner;
+    
+    uint32_t sample_duration;
+    uint32_t sample_size;
+    uint32_t sample_flags;
+    // if version == 0, unsigned int(32); otherwise, signed int(32).
+    int64_t sample_composition_time_offset;
+    
+    SrsMp4TrunEntry(SrsMp4FullBox* o);
+    virtual ~SrsMp4TrunEntry();
+    
+    virtual int nb_header();
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
+};
+
+/**
+ * 8.8.8 Track Fragment Run Box (trun)
+ * ISO_IEC_14496-12-base-format-2012.pdf, page 69
+ * Within the Track Fragment Box, there are zero or more Track Run Boxes. If the duration-is-empty flag is set in
+ * the tf_flags, there are no track runs. A track run documents a contiguous set of samples for a track.
+ */
+class SrsMp4TrackFragmentRunBox : public SrsMp4FullBox
+{
+public:
+    // the number of samples being added in this run; also the number of rows in the following
+    // table (the rows can be empty)
+    uint32_t sample_count;
+// the following are optional fields
+public:
+    // added to the implicit or explicit data_offset established in the track fragment header.
+    int32_t data_offset;
+    // provides a set of flags for the first sample only of this run.
+    uint32_t first_sample_flags;
+// all fields in the following array are optional
+public:
+    std::vector<SrsMp4TrunEntry*> entries;
+public:
+    SrsMp4TrackFragmentRunBox();
+    virtual ~SrsMp4TrackFragmentRunBox();
+protected:
+    virtual int nb_header();
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -336,13 +622,15 @@ public:
     virtual int nb_bytes();
     // To encode the mdat box, the buf should only contains the sz_header(),
     // because the mdata only encode the header.
-    virtual int encode(SrsBuffer* buf);
+    virtual srs_error_t encode(SrsBuffer* buf);
     // To decode the mdat box, the buf should only contains the sz_header(),
     // because the mdat only decode the header.
-    virtual int decode(SrsBuffer* buf);
+    virtual srs_error_t decode(SrsBuffer* buf);
 protected:
-    virtual int encode_boxes(SrsBuffer* buf);
-    virtual int decode_boxes(SrsBuffer* buf);
+    virtual srs_error_t encode_boxes(SrsBuffer* buf);
+    virtual srs_error_t decode_boxes(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -354,13 +642,14 @@ class SrsMp4FreeSpaceBox : public SrsMp4Box
 private:
     std::vector<char> data;
 public:
-    SrsMp4FreeSpaceBox();
+    SrsMp4FreeSpaceBox(SrsMp4BoxType v);
     virtual ~SrsMp4FreeSpaceBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
-    virtual std::stringstream& dumps_detail(std::stringstream& ss, int level);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -393,8 +682,8 @@ public:
     virtual int nb_soun_tracks();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
 };
 
 /**
@@ -443,9 +732,10 @@ public:
     virtual uint64_t duration();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
-    virtual std::stringstream& dumps_detail(std::stringstream& ss, int level);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 // The type of track, maybe combine of types.
@@ -493,8 +783,10 @@ public:
     virtual ~SrsMp4TrackExtendsBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -612,8 +904,10 @@ public:
     virtual ~SrsMp4TrackHeaderBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -652,6 +946,9 @@ public:
     int16_t media_rate_fraction;
 public:
     SrsMp4ElstEntry();
+public:
+    virtual std::stringstream& dumps(std::stringstream& ss, SrsMp4DumpContext dc);
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -671,8 +968,10 @@ public:
     virtual ~SrsMp4EditListBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -749,8 +1048,10 @@ public:
     virtual void set_language2(char v);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -779,8 +1080,10 @@ public:
     virtual bool is_audio();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -828,8 +1131,8 @@ public:
     virtual ~SrsMp4VideoMeidaHeaderBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
 };
 
 /**
@@ -850,8 +1153,8 @@ public:
     virtual ~SrsMp4SoundMeidaHeaderBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
 };
 
 /**
@@ -896,8 +1199,10 @@ public:
     virtual ~SrsMp4DataEntryUrlBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -913,8 +1218,10 @@ public:
     virtual ~SrsMp4DataEntryUrnBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -937,8 +1244,10 @@ public:
     virtual SrsMp4DataReferenceBox* append(SrsMp4DataEntryBox* v);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -977,8 +1286,8 @@ public:
     virtual void set_stss(SrsMp4SyncSampleBox* v);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
 };
 
 /**
@@ -998,8 +1307,10 @@ public:
     virtual ~SrsMp4SampleEntry();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1039,8 +1350,10 @@ public:
     virtual void set_avcC(SrsMp4AvccBox* v);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1056,8 +1369,10 @@ public:
     virtual ~SrsMp4AvccBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1084,8 +1399,10 @@ public:
     virtual SrsMp4DecoderSpecificInfo* asc();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 // Table 1 — List of Class Tags for Descriptors
@@ -1126,12 +1443,14 @@ public:
 // Interface ISrsCodec
 public:
     virtual int nb_bytes();
-    virtual int encode(SrsBuffer* buf);
-    virtual int decode(SrsBuffer* buf);
+    virtual srs_error_t encode(SrsBuffer* buf);
+    virtual srs_error_t decode(SrsBuffer* buf);
 protected:
     virtual int32_t nb_payload() = 0;
-    virtual int encode_payload(SrsBuffer* buf) = 0;
-    virtual int decode_payload(SrsBuffer* buf) = 0;
+    virtual srs_error_t encode_payload(SrsBuffer* buf) = 0;
+    virtual srs_error_t decode_payload(SrsBuffer* buf) = 0;
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 // Table 5 — objectTypeIndication Values
@@ -1166,8 +1485,10 @@ public:
     virtual ~SrsMp4DecoderSpecificInfo();
 protected:
     virtual int32_t nb_payload();
-    virtual int encode_payload(SrsBuffer* buf);
-    virtual int decode_payload(SrsBuffer* buf);
+    virtual srs_error_t encode_payload(SrsBuffer* buf);
+    virtual srs_error_t decode_payload(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1192,8 +1513,10 @@ public:
     virtual ~SrsMp4DecoderConfigDescriptor();
 protected:
     virtual int32_t nb_payload();
-    virtual int encode_payload(SrsBuffer* buf);
-    virtual int decode_payload(SrsBuffer* buf);
+    virtual srs_error_t encode_payload(SrsBuffer* buf);
+    virtual srs_error_t decode_payload(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1209,8 +1532,8 @@ public:
     virtual ~SrsMp4SLConfigDescriptor();
 protected:
     virtual int32_t nb_payload();
-    virtual int encode_payload(SrsBuffer* buf);
-    virtual int decode_payload(SrsBuffer* buf);
+    virtual srs_error_t encode_payload(SrsBuffer* buf);
+    virtual srs_error_t decode_payload(SrsBuffer* buf);
 };
 
 /**
@@ -1238,8 +1561,10 @@ public:
     virtual ~SrsMp4ES_Descriptor();
 protected:
     virtual int32_t nb_payload();
-    virtual int encode_payload(SrsBuffer* buf);
-    virtual int decode_payload(SrsBuffer* buf);
+    virtual srs_error_t encode_payload(SrsBuffer* buf);
+    virtual srs_error_t decode_payload(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1260,8 +1585,10 @@ public:
     virtual SrsMp4DecoderSpecificInfo* asc();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1288,8 +1615,11 @@ public:
     virtual SrsMp4SampleDescriptionBox* append(SrsMp4SampleEntry* v);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+    virtual bool boxes_in_header();
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1305,6 +1635,8 @@ struct SrsMp4SttsEntry
     uint32_t sample_delta;
     // Constructor
     SrsMp4SttsEntry();
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1329,13 +1661,15 @@ public:
     virtual ~SrsMp4DecodingTime2SampleBox();
 public:
     // Initialize the counter.
-    virtual int initialize_counter();
+    virtual srs_error_t initialize_counter();
     // When got an sample, index starts from 0.
-    virtual int on_sample(uint32_t sample_index, SrsMp4SttsEntry** ppentry);
+    virtual srs_error_t on_sample(uint32_t sample_index, SrsMp4SttsEntry** ppentry);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1353,6 +1687,8 @@ struct SrsMp4CttsEntry
     int64_t sample_offset;
     // Constructor
     SrsMp4CttsEntry();
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1379,13 +1715,15 @@ public:
     virtual ~SrsMp4CompositionTime2SampleBox();
 public:
     // Initialize the counter.
-    virtual int initialize_counter();
+    virtual srs_error_t initialize_counter();
     // When got an sample, index starts from 0.
-    virtual int on_sample(uint32_t sample_index, SrsMp4CttsEntry** ppentry);
+    virtual srs_error_t on_sample(uint32_t sample_index, SrsMp4CttsEntry** ppentry);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1410,8 +1748,10 @@ public:
     virtual bool is_sync(uint32_t sample_index);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1433,6 +1773,8 @@ struct SrsMp4StscEntry
     uint32_t sample_description_index;
     // Constructor
     SrsMp4StscEntry();
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1462,8 +1804,10 @@ public:
     virtual SrsMp4StscEntry* on_chunk(uint32_t chunk_index);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1486,8 +1830,10 @@ public:
     virtual ~SrsMp4ChunkOffsetBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1510,8 +1856,10 @@ public:
     virtual ~SrsMp4ChunkLargeOffsetBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1538,11 +1886,13 @@ public:
     virtual ~SrsMp4SampleSizeBox();
 public:
     // Get the size of sample.
-    virtual int get_sample_size(uint32_t sample_index, uint32_t* psample_size);
+    virtual srs_error_t get_sample_size(uint32_t sample_index, uint32_t* psample_size);
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1560,8 +1910,10 @@ public:
     virtual ~SrsMp4UserDataBox();
 protected:
     virtual int nb_header();
-    virtual int encode_header(SrsBuffer* buf);
-    virtual int decode_header(SrsBuffer* buf);
+    virtual srs_error_t encode_header(SrsBuffer* buf);
+    virtual srs_error_t decode_header(SrsBuffer* buf);
+public:
+    virtual std::stringstream& dumps_detail(std::stringstream& ss, SrsMp4DumpContext dc);
 };
 
 /**
@@ -1613,32 +1965,35 @@ public:
  */
 class SrsMp4SampleManager
 {
-private:
+public:
     std::vector<SrsMp4Sample*> samples;
 public:
     SrsMp4SampleManager();
     virtual ~SrsMp4SampleManager();
 public:
     // Load the samples from moov. There must be atleast one track.
-    virtual int load(SrsMp4MovieBox* moov);
+    virtual srs_error_t load(SrsMp4MovieBox* moov);
     // Get the sample at index position.
     // @remark NULL if exceed the max index.
     virtual SrsMp4Sample* at(uint32_t index);
     // Append the sample to the tail of manager.
     virtual void append(SrsMp4Sample* sample);
     // Write the samples info to moov.
-    virtual int write(SrsMp4MovieBox* moov);
+    virtual srs_error_t write(SrsMp4MovieBox* moov);
+    // Write the samples info to moof.
+    // @param The dts is the dts of last segment.
+    virtual srs_error_t write(SrsMp4MovieFragmentBox* moof, uint64_t& dts);
 private:
-    virtual int write_track(SrsFrameType track,
+    virtual srs_error_t write_track(SrsFrameType track,
         SrsMp4DecodingTime2SampleBox* stts, SrsMp4SyncSampleBox* stss, SrsMp4CompositionTime2SampleBox* ctts,
         SrsMp4Sample2ChunkBox* stsc, SrsMp4SampleSizeBox* stsz, SrsMp4ChunkOffsetBox* stco);
-    virtual int do_load(std::map<uint64_t, SrsMp4Sample*>& tses, SrsMp4MovieBox* moov);
+    virtual srs_error_t do_load(std::map<uint64_t, SrsMp4Sample*>& tses, SrsMp4MovieBox* moov);
 private:
     // Load the samples of track from stco, stsz and stsc.
     // @param tses The temporary samples, key is offset, value is sample.
     // @param tt The type of sample, convert to flv tag type.
     // TODO: Support co64 for stco.
-    virtual int load_trak(std::map<uint64_t, SrsMp4Sample*>& tses, SrsFrameType tt,
+    virtual srs_error_t load_trak(std::map<uint64_t, SrsMp4Sample*>& tses, SrsFrameType tt,
         SrsMp4MediaHeaderBox* mdhd, SrsMp4ChunkOffsetBox* stco, SrsMp4SampleSizeBox* stsz, SrsMp4Sample2ChunkBox* stsc,
         SrsMp4DecodingTime2SampleBox* stts, SrsMp4CompositionTime2SampleBox* ctts, SrsMp4SyncSampleBox* stss);
 };
@@ -1657,12 +2012,12 @@ public:
     SrsMp4BoxReader();
     virtual ~SrsMp4BoxReader();
 public:
-    virtual int initialize(ISrsReadSeeker* rs);
+    virtual srs_error_t initialize(ISrsReadSeeker* rs);
 public:
     // Read a MP4 box to pbox, the stream is fill with the bytes of box to decode.
-    virtual int read(SrsSimpleStream* stream, SrsMp4Box** ppbox);
+    virtual srs_error_t read(SrsSimpleStream* stream, SrsMp4Box** ppbox);
     // Skip the box from stream, and skip in file if need.
-    virtual int skip(SrsMp4Box* box, SrsSimpleStream* stream);
+    virtual srs_error_t skip(SrsMp4Box* box, SrsSimpleStream* stream);
 };
 
 /**
@@ -1720,7 +2075,7 @@ public:
      * Initialize the decoder with a reader r.
      * @param r The underlayer io reader, user must manage it.
      */
-    virtual int initialize(ISrsReadSeeker* rs);
+    virtual srs_error_t initialize(ISrsReadSeeker* rs);
     /**
      * Read a sample from mp4.
      * @param pht The sample hanler type, audio/soun or video/vide.
@@ -1732,17 +2087,17 @@ public:
      * @param psample The output payload, user must free it.
      * @remark The decoder will generate the first two audio/video sequence header.
      */
-    virtual int read_sample(SrsMp4HandlerType* pht, uint16_t* pft, uint16_t* pct,
+    virtual srs_error_t read_sample(SrsMp4HandlerType* pht, uint16_t* pft, uint16_t* pct,
         uint32_t* pdts, uint32_t* ppts, uint8_t** psample, uint32_t* pnb_sample);
 private:
-    virtual int parse_ftyp(SrsMp4FileTypeBox* ftyp);
-    virtual int parse_moov(SrsMp4MovieBox* moov);
+    virtual srs_error_t parse_ftyp(SrsMp4FileTypeBox* ftyp);
+    virtual srs_error_t parse_moov(SrsMp4MovieBox* moov);
 private:
     // Load the next box from reader.
     // @param required_box_type The box type required, 0 for any box.
-    virtual int load_next_box(SrsMp4Box** ppbox, uint32_t required_box_type);
+    virtual srs_error_t load_next_box(SrsMp4Box** ppbox, uint32_t required_box_type);
     // @remark Never load the mdat box content, for it's too large.
-    virtual int do_load_next_box(SrsMp4Box** ppbox, uint32_t required_box_type);
+    virtual srs_error_t do_load_next_box(SrsMp4Box** ppbox, uint32_t required_box_type);
 };
 
 /**
@@ -1752,7 +2107,6 @@ class SrsMp4Encoder
 {
 private:
     ISrsWriteSeeker* wsio;
-    SrsBuffer* buffer;
     // The mdat offset at file, we must update the header when flush.
     off_t mdat_offset;
     // The mdat size in bytes, we must update it to the mdat box header.
@@ -1794,10 +2148,10 @@ public:
     SrsMp4Encoder();
     virtual ~SrsMp4Encoder();
 public:
-    // Initialize the encoder with a writer w.
-    // @param w The underlayer io writer, user must manage it.
-    virtual int initialize(ISrsWriteSeeker* ws);
-    // Write a sampel to mp4.
+    // Initialize the encoder with a writer and seeker ws.
+    // @param ws The underlayer io writer and seeker, user must manage it.
+    virtual srs_error_t initialize(ISrsWriteSeeker* ws);
+    // Write a sample to mp4.
     // @param ht, The sample handler type, audio/soun or video/vide.
     // @param ft, The frame type. For video, it's SrsVideoAvcFrameType.
     // @param ct, The codec type. For video, it's SrsVideoAvcFrameTrait. For audio, it's SrsAudioAacFrameTrait.
@@ -1805,13 +2159,69 @@ public:
     // @param pts The output pts in milliseconds.
     // @param sample The output payload, user must free it.
     // @param nb_sample The output size of payload.
-    virtual int write_sample(SrsMp4HandlerType ht, uint16_t ft, uint16_t ct,
+    virtual srs_error_t write_sample(SrsMp4HandlerType ht, uint16_t ft, uint16_t ct,
         uint32_t dts, uint32_t pts, uint8_t* sample, uint32_t nb_sample);
     // Flush the encoder, to write the moov.
-    virtual int flush();
+    virtual srs_error_t flush();
 private:
-    virtual int copy_sequence_header(bool vsh, uint8_t* sample, uint32_t nb_sample);
-    virtual int do_write_sample(SrsMp4Sample* ps, uint8_t* sample, uint32_t nb_sample);
+    virtual srs_error_t copy_sequence_header(bool vsh, uint8_t* sample, uint32_t nb_sample);
+    virtual srs_error_t do_write_sample(SrsMp4Sample* ps, uint8_t* sample, uint32_t nb_sample);
+};
+
+/**
+ * A fMP4 encoder, to write the init.mp4 with sequence header.
+ */
+class SrsMp4M2tsInitEncoder
+{
+private:
+    ISrsWriter* writer;
+public:
+    SrsMp4M2tsInitEncoder();
+    virtual ~SrsMp4M2tsInitEncoder();
+public:
+    // Initialize the encoder with a writer w.
+    virtual srs_error_t initialize(ISrsWriter* w);
+    // Write the sequence header.
+    virtual srs_error_t write(SrsFormat* format, bool video, int tid);
+};
+
+/**
+ * A fMP4 encoder, to cache segments then flush to disk, because the fMP4 should write
+ * trun box before mdat.
+ */
+class SrsMp4M2tsSegmentEncoder
+{
+private:
+    ISrsWriter* writer;
+    SrsBuffer* buffer;
+    uint32_t sequence_number;
+    uint64_t decode_basetime;
+    uint32_t track_id;
+private:
+    uint32_t nb_audios;
+    uint32_t nb_videos;
+    uint64_t mdat_bytes;
+    SrsMp4SampleManager* samples;
+private:
+    uint64_t data_offset;
+public:
+    SrsMp4M2tsSegmentEncoder();
+    virtual ~SrsMp4M2tsSegmentEncoder();
+public:
+    // Initialize the encoder with a writer w.
+    virtual srs_error_t initialize(ISrsWriter* w, uint32_t sequence, uint64_t basetime, uint32_t tid);
+    // Cache a sample.
+    // @param ht, The sample handler type, audio/soun or video/vide.
+    // @param ft, The frame type. For video, it's SrsVideoAvcFrameType.
+    // @param dts The output dts in milliseconds.
+    // @param pts The output pts in milliseconds.
+    // @param sample The output payload, user must free it.
+    // @param nb_sample The output size of payload.
+    // @remark All samples are RAW AAC/AVC data, because sequence header is writen to init.mp4.
+    virtual srs_error_t write_sample(SrsMp4HandlerType ht, uint16_t ft,
+        uint32_t dts, uint32_t pts, uint8_t* sample, uint32_t nb_sample);
+    // Flush the encoder, to write the moof and mdat.
+    virtual srs_error_t flush(uint64_t& dts);
 };
 
 #endif

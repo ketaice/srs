@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -78,7 +78,7 @@ const char* _srs_version = "XCORE-" RTMP_SIG_SRS_SERVER;
  * @param dir the transcode or ingest config directive.
  * @param engine the amf0 object to dumps to.
  */
-int srs_config_dumps_engine(SrsConfDirective* dir, SrsJsonObject* engine);
+srs_error_t srs_config_dumps_engine(SrsConfDirective* dir, SrsJsonObject* engine);
 
 /**
  * whether the two vector actual equals, for instance,
@@ -133,16 +133,15 @@ namespace _srs_internal
         srs_freepa(start);
     }
     
-    int SrsConfigBuffer::fullfill(const char* filename)
+    srs_error_t SrsConfigBuffer::fullfill(const char* filename)
     {
-        int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         SrsFileReader reader;
         
         // open file reader.
-        if ((ret = reader.open(filename)) != ERROR_SUCCESS) {
-            srs_error("open conf file error. ret=%d", ret);
-            return ret;
+        if ((err = reader.open(filename)) != srs_success) {
+            return srs_error_wrap(err, "open file=%s", filename);
         }
         
         // read all.
@@ -155,13 +154,11 @@ namespace _srs_internal
         
         // read total content from file.
         ssize_t nread = 0;
-        if ((ret = reader.read(start, filesize, &nread)) != ERROR_SUCCESS) {
-            srs_error("read file read error. expect %d, actual %d bytes, ret=%d",
-                      filesize, nread, ret);
-            return ret;
+        if ((err = reader.read(start, filesize, &nread)) != srs_success) {
+            return srs_error_wrap(err, "read %d only %d bytes", filesize, nread);
         }
         
-        return ret;
+        return err;
     }
     
     bool SrsConfigBuffer::empty()
@@ -324,9 +321,9 @@ string srs_config_bool2switch(const string& sbool)
     return sbool == "true"? "on":"off";
 }
 
-int srs_config_transform_vhost(SrsConfDirective* root)
+srs_error_t srs_config_transform_vhost(SrsConfDirective* root)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     for (int i = 0; i < (int)root->directives.size(); i++) {
         SrsConfDirective* dir = root->directives.at(i);
@@ -358,6 +355,7 @@ int srs_config_transform_vhost(SrsConfDirective* root)
             //      vhost { http_static {} }
             if (n == "http") {
                 conf->name = "http_static";
+                srs_warn("transform: vhost.http => vhost.http_static for %s", dir->name.c_str());
                 ++it;
                 continue;
             }
@@ -386,12 +384,15 @@ int srs_config_transform_vhost(SrsConfDirective* root)
                 if (n == "refer") {
                     SrsConfDirective* all = refer->get_or_create("all");
                     all->args = conf->args;
+                    srs_warn("transform: vhost.refer to vhost.refer.all for %s", dir->name.c_str());
                 } else if (n == "refer_play") {
                     SrsConfDirective* play = refer->get_or_create("play");
                     play->args = conf->args;
+                    srs_warn("transform: vhost.refer_play to vhost.refer.play for %s", dir->name.c_str());
                 } else if (n == "refer_publish") {
                     SrsConfDirective* publish = refer->get_or_create("publish");
                     publish->args = conf->args;
+                    srs_warn("transform: vhost.refer_publish to vhost.refer.publish for %s", dir->name.c_str());
                 }
                 
                 // remove the old directive.
@@ -413,12 +414,14 @@ int srs_config_transform_vhost(SrsConfDirective* root)
                 if (enabled) {
                     SrsConfDirective* mr = publish->get_or_create("mr");
                     mr->args = enabled->args;
+                    srs_warn("transform: vhost.mr.enabled to vhost.publish.mr.enabled for %s", dir->name.c_str());
                 }
                 
                 SrsConfDirective* latency = conf->get("latency");
                 if (latency) {
                     SrsConfDirective* mr_latency = publish->get_or_create("mr_latency");
                     mr_latency->args = latency->args;
+                    srs_warn("transform: vhost.mr.latency to vhost.publish.mr_latency for %s", dir->name.c_str());
                 }
                 
                 srs_freep(conf);
@@ -437,6 +440,7 @@ int srs_config_transform_vhost(SrsConfDirective* root)
                 
                 SrsConfDirective* firstpkt_timeout = publish->get_or_create("firstpkt_timeout");
                 firstpkt_timeout->args = conf->args;
+                srs_warn("transform: vhost.publish_1stpkt_timeout to vhost.publish.firstpkt_timeout for %s", dir->name.c_str());
                 
                 srs_freep(conf);
                 continue;
@@ -454,6 +458,7 @@ int srs_config_transform_vhost(SrsConfDirective* root)
                 
                 SrsConfDirective* normal_timeout = publish->get_or_create("normal_timeout");
                 normal_timeout->args = conf->args;
+                srs_warn("transform: vhost.publish_normal_timeout to vhost.publish.normal_timeout for %s", dir->name.c_str());
                 
                 srs_freep(conf);
                 continue;
@@ -467,13 +472,13 @@ int srs_config_transform_vhost(SrsConfDirective* root)
             //      vhost { play { shadow; } }
             if (n == "time_jitter" || n == "mix_correct" || n == "atc" || n == "atc_auto"
                 || n == "mw_latency" || n == "gop_cache" || n == "queue_length" || n == "send_min_interval"
-                || n == "reduce_sequence_header"
-                ) {
+                || n == "reduce_sequence_header") {
                 it = dir->directives.erase(it);
                 
                 SrsConfDirective* play = dir->get_or_create("play");
                 SrsConfDirective* shadow = play->get_or_create(conf->name);
                 shadow->args = conf->args;
+                srs_warn("transform: vhost.%s to vhost.play.%s of %s", n.c_str(), n.c_str(), dir->name.c_str());
                 
                 srs_freep(conf);
                 continue;
@@ -481,15 +486,16 @@ int srs_config_transform_vhost(SrsConfDirective* root)
             
             // SRS3.0, change the forward.
             //  SRS1/2:
-            //      vhost { forward; }
+            //      vhost { forward target; }
             //  SRS3+:
-            //      vhost { forward { enabled; destination; } }
-            if (n == "forward" && conf->directives.empty()) {
+            //      vhost { forward { enabled; destination target; } }
+            if (n == "forward" && conf->directives.empty() && !conf->args.empty()) {
                 conf->get_or_create("enabled")->set_arg0("on");
                 
                 SrsConfDirective* destination = conf->get_or_create("destination");
                 destination->args = conf->args;
                 conf->args.clear();
+                srs_warn("transform: vhost.forward to vhost.forward.destination for %s", dir->name.c_str());
                 
                 ++it;
                 continue;
@@ -507,6 +513,7 @@ int srs_config_transform_vhost(SrsConfDirective* root)
                 SrsConfDirective* cluster = dir->get_or_create("cluster");
                 SrsConfDirective* shadow = cluster->get_or_create(conf->name);
                 shadow->args = conf->args;
+                srs_warn("transform: vhost.%s to vhost.cluster.%s of %s", n.c_str(), n.c_str(), dir->name.c_str());
                 
                 srs_freep(conf);
                 continue;
@@ -516,12 +523,12 @@ int srs_config_transform_vhost(SrsConfDirective* root)
         }
     }
     
-    return ret;
+    return err;
 }
 
-int srs_config_dumps_engine(SrsConfDirective* dir, SrsJsonObject* engine)
+srs_error_t srs_config_dumps_engine(SrsConfDirective* dir, SrsJsonObject* engine)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsConfDirective* conf = NULL;
     
@@ -618,7 +625,7 @@ int srs_config_dumps_engine(SrsConfDirective* dir, SrsJsonObject* engine)
         engine->set("output", conf->dumps_arg0_to_str());
     }
     
-    return ret;
+    return err;
 }
 
 SrsConfDirective::SrsConfDirective()
@@ -788,14 +795,14 @@ bool SrsConfDirective::is_stream_caster()
     return name == "stream_caster";
 }
 
-int SrsConfDirective::parse(SrsConfigBuffer* buffer)
+srs_error_t SrsConfDirective::parse(SrsConfigBuffer* buffer)
 {
     return parse_conf(buffer, parse_file);
 }
 
-int SrsConfDirective::persistence(SrsFileWriter* writer, int level)
+srs_error_t SrsConfDirective::persistence(SrsFileWriter* writer, int level)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     static char SPACE = SRS_CONSTS_SP;
     static char SEMICOLON = SRS_CONSTS_SE;
@@ -808,34 +815,34 @@ int SrsConfDirective::persistence(SrsFileWriter* writer, int level)
     if (level > 0) {
         // indent by (level - 1) * 4 space.
         for (int i = 0; i < level - 1; i++) {
-            if ((ret = writer->write((char*)INDENT, 4, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)INDENT, 4, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write indent");
             }
         }
         
         // directive name.
-        if ((ret = writer->write((char*)name.c_str(), (int)name.length(), NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = writer->write((char*)name.c_str(), (int)name.length(), NULL)) != srs_success) {
+            return srs_error_wrap(err, "write name");
         }
-        if (!args.empty() && (ret = writer->write((char*)&SPACE, 1, NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if (!args.empty() && (err = writer->write((char*)&SPACE, 1, NULL)) != srs_success) {
+            return srs_error_wrap(err, "write name space");
         }
         
         // directive args.
         for (int i = 0; i < (int)args.size(); i++) {
             std::string& arg = args.at(i);
-            if ((ret = writer->write((char*)arg.c_str(), (int)arg.length(), NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)arg.c_str(), (int)arg.length(), NULL)) != srs_success) {
+                return srs_error_wrap(err, "write arg");
             }
-            if (i < (int)args.size() - 1 && (ret = writer->write((char*)&SPACE, 1, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if (i < (int)args.size() - 1 && (err = writer->write((char*)&SPACE, 1, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write arg space");
             }
         }
         
         // native directive, without sub directives.
         if (directives.empty()) {
-            if ((ret = writer->write((char*)&SEMICOLON, 1, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)&SEMICOLON, 1, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write arg semicolon");
             }
         }
     }
@@ -843,45 +850,45 @@ int SrsConfDirective::persistence(SrsFileWriter* writer, int level)
     // persistence all sub directives.
     if (level > 0) {
         if (!directives.empty()) {
-            if ((ret = writer->write((char*)&SPACE, 1, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)&SPACE, 1, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write sub-dir space");
             }
-            if ((ret = writer->write((char*)&LB, 1, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)&LB, 1, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write sub-dir left-brace");
             }
         }
         
-        if ((ret = writer->write((char*)&LF, 1, NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = writer->write((char*)&LF, 1, NULL)) != srs_success) {
+            return srs_error_wrap(err, "write sub-dir linefeed");
         }
     }
     
     for (int i = 0; i < (int)directives.size(); i++) {
         SrsConfDirective* dir = directives.at(i);
-        if ((ret = dir->persistence(writer, level + 1)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = dir->persistence(writer, level + 1)) != srs_success) {
+            return srs_error_wrap(err, "sub-dir %s", dir->name.c_str());
         }
     }
     
     if (level > 0 && !directives.empty()) {
         // indent by (level - 1) * 4 space.
         for (int i = 0; i < level - 1; i++) {
-            if ((ret = writer->write((char*)INDENT, 4, NULL)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = writer->write((char*)INDENT, 4, NULL)) != srs_success) {
+                return srs_error_wrap(err, "write sub-dir indent");
             }
         }
         
-        if ((ret = writer->write((char*)&RB, 1, NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = writer->write((char*)&RB, 1, NULL)) != srs_success) {
+            return srs_error_wrap(err, "write sub-dir right-brace");
         }
         
-        if ((ret = writer->write((char*)&LF, 1, NULL)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = writer->write((char*)&LF, 1, NULL)) != srs_success) {
+            return srs_error_wrap(err, "write sub-dir linefeed");
         }
     }
     
     
-    return ret;
+    return err;
 }
 
 SrsJsonArray* SrsConfDirective::dumps_args()
@@ -915,14 +922,14 @@ SrsJsonAny* SrsConfDirective::dumps_arg0_to_boolean()
 }
 
 // see: ngx_conf_parse
-int SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
+srs_error_t SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     while (true) {
         std::vector<string> args;
         int line_start = 0;
-        ret = read_token(buffer, args, line_start);
+        err = read_token(buffer, args, line_start);
         
         /**
          * ret maybe:
@@ -932,28 +939,28 @@ int SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
          * ERROR_SYSTEM_CONFIG_BLOCK_END         the '}' found
          * ERROR_SYSTEM_CONFIG_EOF               the config file is done
          */
-        if (ret == ERROR_SYSTEM_CONFIG_INVALID) {
-            return ret;
+        if (srs_error_code(err) == ERROR_SYSTEM_CONFIG_INVALID) {
+            return err;
         }
-        if (ret == ERROR_SYSTEM_CONFIG_BLOCK_END) {
+        if (srs_error_code(err) == ERROR_SYSTEM_CONFIG_BLOCK_END) {
             if (type != parse_block) {
-                srs_error("line %d: unexpected \"}\", ret=%d", buffer->line, ret);
-                return ret;
+                return srs_error_wrap(err, "line %d: unexpected \"}\"", buffer->line);
             }
-            return ERROR_SUCCESS;
+            
+            srs_freep(err);
+            return srs_success;
         }
-        if (ret == ERROR_SYSTEM_CONFIG_EOF) {
+        if (srs_error_code(err) == ERROR_SYSTEM_CONFIG_EOF) {
             if (type == parse_block) {
-                srs_error("line %d: unexpected end of file, expecting \"}\", ret=%d", conf_line, ret);
-                return ret;
+                return srs_error_wrap(err, "line %d: unexpected end of file, expecting \"}\"", conf_line);
             }
-            return ERROR_SUCCESS;
+            
+            srs_freep(err);
+            return srs_success;
         }
         
         if (args.empty()) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("line %d: empty directive. ret=%d", conf_line, ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "line %d: empty directive", conf_line);
         }
         
         // build directive tree.
@@ -966,20 +973,22 @@ int SrsConfDirective::parse_conf(SrsConfigBuffer* buffer, SrsDirectiveType type)
         
         directives.push_back(directive);
         
-        if (ret == ERROR_SYSTEM_CONFIG_BLOCK_START) {
-            if ((ret = directive->parse_conf(buffer, parse_block)) != ERROR_SUCCESS) {
-                return ret;
+        if (srs_error_code(err) == ERROR_SYSTEM_CONFIG_BLOCK_START) {
+            srs_freep(err);
+            if ((err = directive->parse_conf(buffer, parse_block)) != srs_success) {
+                return srs_error_wrap(err, "parse dir");
             }
         }
+        srs_freep(err);
     }
     
-    return ret;
+    return err;
 }
 
 // see: ngx_conf_read_token
-int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, int& line_start)
+srs_error_t SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, int& line_start)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     char* pstart = buffer->pos;
     
@@ -993,15 +1002,14 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
     
     while (true) {
         if (buffer->empty()) {
-            ret = ERROR_SYSTEM_CONFIG_EOF;
-            
             if (!args.empty() || !last_space) {
-                srs_error("line %d: unexpected end of file, expecting ; or \"}\"", buffer->line);
-                return ERROR_SYSTEM_CONFIG_INVALID;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID,
+                    "line %d: unexpected end of file, expecting ; or \"}\"",
+                    buffer->line);
             }
             srs_trace("config parse complete");
             
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_EOF, "EOF");
         }
         
         char ch = *buffer->pos++;
@@ -1022,13 +1030,12 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
                 continue;
             }
             if (ch == ';') {
-                return ERROR_SYSTEM_CONFIG_DIRECTIVE;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_DIRECTIVE, "dir");
             }
             if (ch == '{') {
-                return ERROR_SYSTEM_CONFIG_BLOCK_START;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_BLOCK_START, "block");
             }
-            srs_error("line %d: unexpected '%c'", buffer->line, ch);
-            return ERROR_SYSTEM_CONFIG_INVALID;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "line %d: unexpected '%c'", buffer->line, ch);
         }
         
         // last charecter is space.
@@ -1040,22 +1047,19 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
             switch (ch) {
                 case ';':
                     if (args.size() == 0) {
-                        srs_error("line %d: unexpected ';'", buffer->line);
-                        return ERROR_SYSTEM_CONFIG_INVALID;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "line %d: unexpected ';'", buffer->line);
                     }
-                    return ERROR_SYSTEM_CONFIG_DIRECTIVE;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_DIRECTIVE, "dir");
                 case '{':
                     if (args.size() == 0) {
-                        srs_error("line %d: unexpected '{'", buffer->line);
-                        return ERROR_SYSTEM_CONFIG_INVALID;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "line %d: unexpected '{'", buffer->line);
                     }
-                    return ERROR_SYSTEM_CONFIG_BLOCK_START;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_BLOCK_START, "block");
                 case '}':
                     if (args.size() != 0) {
-                        srs_error("line %d: unexpected '}'", buffer->line);
-                        return ERROR_SYSTEM_CONFIG_INVALID;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "line %d: unexpected '}'", buffer->line);
                     }
-                    return ERROR_SYSTEM_CONFIG_BLOCK_END;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_BLOCK_END, "block");
                 case '#':
                     sharp_comment = 1;
                     continue;
@@ -1110,16 +1114,16 @@ int SrsConfDirective::read_token(SrsConfigBuffer* buffer, vector<string>& args, 
                 srs_freepa(aword);
                 
                 if (ch == ';') {
-                    return ERROR_SYSTEM_CONFIG_DIRECTIVE;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_DIRECTIVE, "dir");
                 }
                 if (ch == '{') {
-                    return ERROR_SYSTEM_CONFIG_BLOCK_START;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_BLOCK_START, "block");
                 }
             }
         }
     }
     
-    return ret;
+    return err;
 }
 
 SrsConfig::SrsConfig()
@@ -1187,37 +1191,36 @@ void SrsConfig::unsubscribe(ISrsReloadHandler* handler)
     subscribes.erase(it);
 }
 
-int SrsConfig::reload()
+srs_error_t SrsConfig::reload()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsConfig conf;
     
-    if ((ret = conf.parse_file(config_file.c_str())) != ERROR_SUCCESS) {
-        srs_error("ignore config reloader parse file failed. ret=%d", ret);
-        ret = ERROR_SUCCESS;
-        return ret;
+    if ((err = conf.parse_file(config_file.c_str())) != srs_success) {
+        return srs_error_wrap(err, "parse file");
     }
     srs_info("config reloader parse file success.");
     
     // transform config to compatible with previous style of config.
-    if ((ret = srs_config_transform_vhost(conf.root)) != ERROR_SUCCESS) {
-        srs_error("transform config failed. ret=%d", ret);
-        return ret;
+    if ((err = srs_config_transform_vhost(conf.root)) != srs_success) {
+        return srs_error_wrap(err, "transform config");
     }
     
-    if ((ret = conf.check_config()) != ERROR_SUCCESS) {
-        srs_error("ignore config reloader check config failed. ret=%d", ret);
-        ret = ERROR_SUCCESS;
-        return ret;
+    if ((err = conf.check_config()) != srs_success) {
+        return srs_error_wrap(err, "check config");
     }
     
-    return reload_conf(&conf);
+    if ((err = reload_conf(&conf)) != srs_success) {
+        return srs_error_wrap(err, "reload config");
+    }
+    
+    return err;
 }
 
-int SrsConfig::reload_vhost(SrsConfDirective* old_root)
+srs_error_t SrsConfig::reload_vhost(SrsConfDirective* old_root)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // merge config.
     std::vector<ISrsReloadHandler*>::iterator it;
@@ -1260,16 +1263,16 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
         
         //      DISABLED    =>  ENABLED
         if (!get_vhost_enabled(old_vhost) && get_vhost_enabled(new_vhost)) {
-            if ((ret = do_reload_vhost_added(vhost)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = do_reload_vhost_added(vhost)) != srs_success) {
+                return srs_error_wrap(err, "reload vhost added");
             }
             continue;
         }
         
         //      ENABLED     =>  DISABLED
         if (get_vhost_enabled(old_vhost) && !get_vhost_enabled(new_vhost)) {
-            if ((ret = do_reload_vhost_removed(vhost)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = do_reload_vhost_removed(vhost)) != srs_success) {
+                return srs_error_wrap(err, "reload vhost removed");
             }
             continue;
         }
@@ -1282,9 +1285,7 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
         //      edge will retry and the users connected to edge are ok.
         // it's ok to add or remove edge/origin vhost.
         if (get_vhost_is_edge(old_vhost) != get_vhost_is_edge(new_vhost)) {
-            ret = ERROR_RTMP_EDGE_RELOAD;
-            srs_error("reload never supports mode changed. ret=%d", ret);
-            return ret;
+            return srs_error_new(ERROR_RTMP_EDGE_RELOAD, "vhost mode changed");
         }
         
         // the auto reload configs:
@@ -1297,9 +1298,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("chunk_size"), old_vhost->get("chunk_size"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_chunk_size(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes chunk_size failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_chunk_size(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes chunk_size failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload chunk_size success.", vhost.c_str());
@@ -1309,9 +1309,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("tcp_nodelay"), old_vhost->get("tcp_nodelay"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_tcp_nodelay(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes tcp_nodelay failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_tcp_nodelay(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes tcp_nodelay failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload tcp_nodelay success.", vhost.c_str());
@@ -1321,9 +1320,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("min_latency"), old_vhost->get("min_latency"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_realtime(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes min_latency failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_realtime(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes min_latency failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload min_latency success.", vhost.c_str());
@@ -1333,9 +1331,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("play"), old_vhost->get("play"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_play(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes play failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_play(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes play failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload play success.", vhost.c_str());
@@ -1345,9 +1342,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("forward"), old_vhost->get("forward"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_forward(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes forward failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_forward(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes forward failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload forward success.", vhost.c_str());
@@ -1357,9 +1353,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("dash"), old_vhost->get("dash"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_dash(vhost)) != ERROR_SUCCESS) {
-                        srs_error("Reload vhost %s dash failed, ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_dash(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "Reload vhost %s dash failed", vhost.c_str());
                     }
                 }
                 srs_trace("Reload vhost %s dash ok.", vhost.c_str());
@@ -1370,9 +1365,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("hls"), old_vhost->get("hls"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_hls(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes hls failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_hls(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes hls failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload hls success.", vhost.c_str());
@@ -1382,9 +1376,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("hds"), old_vhost->get("hds"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_hds(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes hds failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_hds(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes hds failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload hds success.", vhost.c_str());
@@ -1394,9 +1387,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("dvr"), old_vhost->get("dvr"), "dvr_apply")) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_dvr(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes dvr failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_dvr(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes dvr failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload dvr success.", vhost.c_str());
@@ -1408,8 +1400,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
                 // @see https://github.com/ossrs/srs/issues/459#issuecomment-140296597
                 SrsConfDirective* nda = new_vhost->get("dvr")? new_vhost->get("dvr")->get("dvr_apply") : NULL;
                 SrsConfDirective* oda = old_vhost->get("dvr")? old_vhost->get("dvr")->get("dvr_apply") : NULL;
-                if (!srs_directive_equals(nda, oda) && (ret = do_reload_vhost_dvr_apply(vhost)) != ERROR_SUCCESS) {
-                    return ret;
+                if (!srs_directive_equals(nda, oda) && (err = do_reload_vhost_dvr_apply(vhost)) != srs_success) {
+                    return srs_error_wrap(err, "reload dvr_apply");
                 }
             }
             
@@ -1417,9 +1409,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("exec"), old_vhost->get("exec"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_exec(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes exec failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_exec(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes exec failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload exec success.", vhost.c_str());
@@ -1429,9 +1420,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("publish"), old_vhost->get("publish"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_publish(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes publish failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_publish(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes publish failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload publish success.", vhost.c_str());
@@ -1441,9 +1431,8 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("http_static"), old_vhost->get("http_static"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes http_static failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_http_updated()) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes http_static failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload http_static success.", vhost.c_str());
@@ -1453,22 +1442,21 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
             if (!srs_directive_equals(new_vhost->get("http_remux"), old_vhost->get("http_remux"))) {
                 for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                     ISrsReloadHandler* subscribe = *it;
-                    if ((ret = subscribe->on_reload_vhost_http_remux_updated(vhost)) != ERROR_SUCCESS) {
-                        srs_error("vhost %s notify subscribes http_remux failed. ret=%d", vhost.c_str(), ret);
-                        return ret;
+                    if ((err = subscribe->on_reload_vhost_http_remux_updated(vhost)) != srs_success) {
+                        return srs_error_wrap(err, "vhost %s notify subscribes http_remux failed", vhost.c_str());
                     }
                 }
                 srs_trace("vhost %s reload http_remux success.", vhost.c_str());
             }
             
             // transcode, many per vhost.
-            if ((ret = reload_transcode(new_vhost, old_vhost)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = reload_transcode(new_vhost, old_vhost)) != srs_success) {
+                return srs_error_wrap(err, "reload transcode");
             }
             
             // ingest, many per vhost.
-            if ((ret = reload_ingest(new_vhost, old_vhost)) != ERROR_SUCCESS) {
-                return ret;
+            if ((err = reload_ingest(new_vhost, old_vhost)) != srs_success) {
+                return srs_error_wrap(err, "reload ingest");
             }
             continue;
         }
@@ -1476,12 +1464,12 @@ int SrsConfig::reload_vhost(SrsConfDirective* old_root)
                   get_vhost_enabled(old_vhost), get_vhost_enabled(new_vhost));
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::reload_conf(SrsConfig* conf)
+srs_error_t SrsConfig::reload_conf(SrsConfig* conf)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsConfDirective* old_root = root;
     SrsAutoFree(SrsConfDirective, old_root);
@@ -1502,84 +1490,84 @@ int SrsConfig::reload_conf(SrsConfig* conf)
     
     // merge config: listen
     if (!srs_directive_equals(root->get("listen"), old_root->get("listen"))) {
-        if ((ret = do_reload_listen()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_listen()) != srs_success) {
+            return srs_error_wrap(err, "listen");
         }
     }
     
     // merge config: pid
     if (!srs_directive_equals(root->get("pid"), old_root->get("pid"))) {
-        if ((ret = do_reload_pid()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_pid()) != srs_success) {
+            return srs_error_wrap(err, "pid");;
         }
     }
     
     // merge config: srs_log_tank
     if (!srs_directive_equals(root->get("srs_log_tank"), old_root->get("srs_log_tank"))) {
-        if ((ret = do_reload_srs_log_tank()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_srs_log_tank()) != srs_success) {
+            return srs_error_wrap(err, "log tank");;
         }
     }
     
     // merge config: srs_log_level
     if (!srs_directive_equals(root->get("srs_log_level"), old_root->get("srs_log_level"))) {
-        if ((ret = do_reload_srs_log_level()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_srs_log_level()) != srs_success) {
+            return srs_error_wrap(err, "log level");;
         }
     }
     
     // merge config: srs_log_file
     if (!srs_directive_equals(root->get("srs_log_file"), old_root->get("srs_log_file"))) {
-        if ((ret = do_reload_srs_log_file()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_srs_log_file()) != srs_success) {
+            return srs_error_wrap(err, "log file");;
         }
     }
     
     // merge config: max_connections
     if (!srs_directive_equals(root->get("max_connections"), old_root->get("max_connections"))) {
-        if ((ret = do_reload_max_connections()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_max_connections()) != srs_success) {
+            return srs_error_wrap(err, "max connections");;
         }
     }
     
     // merge config: utc_time
     if (!srs_directive_equals(root->get("utc_time"), old_root->get("utc_time"))) {
-        if ((ret = do_reload_utc_time()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_utc_time()) != srs_success) {
+            return srs_error_wrap(err, "utc time");;
         }
     }
     
     // merge config: pithy_print_ms
     if (!srs_directive_equals(root->get("pithy_print_ms"), old_root->get("pithy_print_ms"))) {
-        if ((ret = do_reload_pithy_print_ms()) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = do_reload_pithy_print_ms()) != srs_success) {
+            return srs_error_wrap(err, "pithy print ms");;
         }
     }
     
     // merge config: http_api
-    if ((ret = reload_http_api(old_root)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = reload_http_api(old_root)) != srs_success) {
+        return srs_error_wrap(err, "http api");;
     }
     
     // merge config: http_stream
-    if ((ret = reload_http_stream(old_root)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = reload_http_stream(old_root)) != srs_success) {
+        return srs_error_wrap(err, "http steram");;
     }
     
     // TODO: FIXME: support reload stream_caster.
     // TODO: FIXME: support reload kafka.
     
     // merge config: vhost
-    if ((ret = reload_vhost(old_root)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = reload_vhost(old_root)) != srs_success) {
+        return srs_error_wrap(err, "vhost");;
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::reload_http_api(SrsConfDirective* old_root)
+srs_error_t SrsConfig::reload_http_api(SrsConfDirective* old_root)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // merge config.
     std::vector<ISrsReloadHandler*>::iterator it;
@@ -1597,28 +1585,24 @@ int SrsConfig::reload_http_api(SrsConfDirective* old_root)
     if (!get_http_api_enabled(old_http_api) && get_http_api_enabled(new_http_api)) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_api_enabled()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_api disabled=>enabled failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_api_enabled()) != srs_success) {
+                return srs_error_wrap(err, "http api off=>on");
             }
         }
-        srs_trace("reload disabled=>enabled http_api success.");
-        
-        return ret;
+        srs_trace("reload off=>on http_api success.");
+        return err;
     }
     
     // ENABLED     =>      DISABLED
     if (get_http_api_enabled(old_http_api) && !get_http_api_enabled(new_http_api)) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_api_disabled()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_api enabled=>disabled failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_api_disabled()) != srs_success) {
+                return srs_error_wrap(err, "http api on=>off");
             }
         }
-        srs_trace("reload enabled=>disabled http_api success.");
-        
-        return ret;
+        srs_trace("reload http_api on=>off success.");
+        return err;
     }
     
     //      ENABLED     =>  ENABLED (modified)
@@ -1627,46 +1611,41 @@ int SrsConfig::reload_http_api(SrsConfDirective* old_root)
         ) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_api_enabled()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_api enabled modified failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_api_enabled()) != srs_success) {
+                return srs_error_wrap(err, "http api enabled");
             }
         }
-        srs_trace("reload enabled modified http_api success.");
+        srs_trace("reload http api enabled success.");
         
         if (!srs_directive_equals(old_http_api->get("crossdomain"), new_http_api->get("crossdomain"))) {
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_http_api_crossdomain()) != ERROR_SUCCESS) {
-                    srs_error("notify subscribes http_api crossdomain modified failed. ret=%d", ret);
-                    return ret;
+                if ((err = subscribe->on_reload_http_api_crossdomain()) != srs_success) {
+                    return srs_error_wrap(err, "http api crossdomain");
                 }
             }
         }
-        srs_trace("reload crossdomain modified http_api success.");
+        srs_trace("reload http api crossdomain success.");
         
         if (!srs_directive_equals(old_http_api->get("raw_api"), new_http_api->get("raw_api"))) {
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_http_api_raw_api()) != ERROR_SUCCESS) {
-                    srs_error("notify subscribes http_api raw_api modified failed. ret=%d", ret);
-                    return ret;
+                if ((err = subscribe->on_reload_http_api_raw_api()) != srs_success) {
+                    return srs_error_wrap(err, "http api raw_api");
                 }
             }
         }
-        srs_trace("reload raw_api modified http_api success.");
-        
-        return ret;
+        srs_trace("reload http api raw_api success.");
+        return err;
     }
     
-    srs_trace("reload http_api not changed success.");
-    
-    return ret;
+    srs_trace("reload http_api success, nothing changed.");
+    return err;
 }
 
-int SrsConfig::reload_http_stream(SrsConfDirective* old_root)
+srs_error_t SrsConfig::reload_http_stream(SrsConfDirective* old_root)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // merge config.
     std::vector<ISrsReloadHandler*>::iterator it;
@@ -1684,28 +1663,24 @@ int SrsConfig::reload_http_stream(SrsConfDirective* old_root)
     if (!get_http_stream_enabled(old_http_stream) && get_http_stream_enabled(new_http_stream)) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_stream_enabled()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_stream disabled=>enabled failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_stream_enabled()) != srs_success) {
+                return srs_error_wrap(err, "http stream off=>on");
             }
         }
-        srs_trace("reload disabled=>enabled http_stream success.");
-        
-        return ret;
+        srs_trace("reload http stream off=>on success.");
+        return err;
     }
     
     // ENABLED     =>      DISABLED
     if (get_http_stream_enabled(old_http_stream) && !get_http_stream_enabled(new_http_stream)) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_stream_disabled()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_stream enabled=>disabled failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_stream_disabled()) != srs_success) {
+                return srs_error_wrap(err, "http stream on=>off");
             }
         }
-        srs_trace("reload enabled=>disabled http_stream success.");
-        
-        return ret;
+        srs_trace("reload http stream on=>off success.");
+        return err;
     }
     
     //      ENABLED     =>  ENABLED (modified)
@@ -1714,35 +1689,31 @@ int SrsConfig::reload_http_stream(SrsConfDirective* old_root)
         ) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_http_stream_updated()) != ERROR_SUCCESS) {
-                srs_error("notify subscribes http_stream enabled modified failed. ret=%d", ret);
-                return ret;
+            if ((err = subscribe->on_reload_http_stream_updated()) != srs_success) {
+                return srs_error_wrap(err, "http stream enabled");
             }
         }
-        srs_trace("reload enabled modified http_stream success.");
+        srs_trace("reload http stream enabled success.");
         
         if (!srs_directive_equals(old_http_stream->get("crossdomain"), new_http_stream->get("crossdomain"))) {
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_http_stream_crossdomain()) != ERROR_SUCCESS) {
-                    srs_error("notify subscribes http_stream crossdomain modified failed. ret=%d", ret);
-                    return ret;
+                if ((err = subscribe->on_reload_http_stream_crossdomain()) != srs_success) {
+                    return srs_error_wrap(err, "http stream crossdomain");
                 }
             }
         }
-        srs_trace("reload crossdomain modified http_stream success.");
-        
-        return ret;
+        srs_trace("reload http stream crossdomain success.");
+        return err;
     }
     
-    srs_trace("reload http_stream not changed success.");
-    
-    return ret;
+    srs_trace("reload http stream success, nothing changed.");
+    return err;
 }
 
-int SrsConfig::reload_transcode(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost)
+srs_error_t SrsConfig::reload_transcode(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     std::vector<SrsConfDirective*> old_transcoders;
     for (int i = 0; i < (int)old_vhost->directives.size(); i++) {
@@ -1813,20 +1784,19 @@ int SrsConfig::reload_transcode(SrsConfDirective* new_vhost, SrsConfDirective* o
     if (changed) {
         for (it = subscribes.begin(); it != subscribes.end(); ++it) {
             ISrsReloadHandler* subscribe = *it;
-            if ((ret = subscribe->on_reload_vhost_transcode(vhost)) != ERROR_SUCCESS) {
-                srs_error("vhost %s notify subscribes transcode failed. ret=%d", vhost.c_str(), ret);
-                return ret;
+            if ((err = subscribe->on_reload_vhost_transcode(vhost)) != srs_success) {
+                return srs_error_wrap(err, "vhost %s notify subscribes transcode failed", vhost.c_str());
             }
         }
         srs_trace("vhost %s reload transcode success.", vhost.c_str());
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost)
+srs_error_t SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     std::vector<SrsConfDirective*> old_ingesters;
     for (int i = 0; i < (int)old_vhost->directives.size(); i++) {
@@ -1859,10 +1829,8 @@ int SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_
             // notice handler ingester removed.
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_ingest_removed(vhost, ingest_id)) != ERROR_SUCCESS) {
-                    srs_error("vhost %s notify subscribes ingest=%s removed failed. ret=%d",
-                              vhost.c_str(), ingest_id.c_str(), ret);
-                    return ret;
+                if ((err = subscribe->on_reload_ingest_removed(vhost, ingest_id)) != srs_success) {
+                    return srs_error_wrap(err, "vhost %s notify subscribes ingest=%s removed failed", vhost.c_str(), ingest_id.c_str());
                 }
             }
             srs_trace("vhost %s reload ingest=%s removed success.", vhost.c_str(), ingest_id.c_str());
@@ -1879,10 +1847,8 @@ int SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_
         if (!get_ingest_enabled(old_ingester) && get_ingest_enabled(new_ingester)) {
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_ingest_added(vhost, ingest_id)) != ERROR_SUCCESS) {
-                    srs_error("vhost %s notify subscribes ingest=%s added failed. ret=%d",
-                              vhost.c_str(), ingest_id.c_str(), ret);
-                    return ret;
+                if ((err = subscribe->on_reload_ingest_added(vhost, ingest_id)) != srs_success) {
+                    return srs_error_wrap(err, "vhost %s notify subscribes ingest=%s added failed", vhost.c_str(), ingest_id.c_str());
                 }
             }
             srs_trace("vhost %s reload ingest=%s added success.", vhost.c_str(), ingest_id.c_str());
@@ -1904,25 +1870,23 @@ int SrsConfig::reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_
             // notice handler ingester removed.
             for (it = subscribes.begin(); it != subscribes.end(); ++it) {
                 ISrsReloadHandler* subscribe = *it;
-                if ((ret = subscribe->on_reload_ingest_updated(vhost, ingest_id)) != ERROR_SUCCESS) {
-                    srs_error("vhost %s notify subscribes ingest=%s updated failed. ret=%d",
-                              vhost.c_str(), ingest_id.c_str(), ret);
-                    return ret;
+                if ((err = subscribe->on_reload_ingest_updated(vhost, ingest_id)) != srs_success) {
+                    return srs_error_wrap(err, "vhost %s notify subscribes ingest=%s updated failed", vhost.c_str(), ingest_id.c_str());
                 }
             }
             srs_trace("vhost %s reload ingest=%s updated success.", vhost.c_str(), ingest_id.c_str());
         }
     }
     
-    srs_trace("ingest not changed for vhost=%s", vhost.c_str());
+    srs_trace("ingest nothing changed for vhost=%s", vhost.c_str());
     
-    return ret;
+    return err;
 }
 
 // see: ngx_get_options
-int SrsConfig::parse_options(int argc, char** argv)
+srs_error_t SrsConfig::parse_options(int argc, char** argv)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // argv
     for (int i = 0; i < argc; i++) {
@@ -1936,8 +1900,8 @@ int SrsConfig::parse_options(int argc, char** argv)
     // config
     show_help = true;
     for (int i = 1; i < argc; i++) {
-        if ((ret = parse_argv(i, argv)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = parse_argv(i, argv)) != srs_success) {
+            return srs_error_wrap(err, "parse argv");
         }
     }
     
@@ -1959,33 +1923,30 @@ int SrsConfig::parse_options(int argc, char** argv)
     srs_trace(_srs_version);
     
     if (config_file.empty()) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("config file not specified, see help: %s -h, ret=%d", argv[0], ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "no config, read help: %s -h", argv[0]);
     }
     
-    ret = parse_file(config_file.c_str());
-    
-    // transform config to compatible with previous style of config.
-    if ((ret = srs_config_transform_vhost(root)) != ERROR_SUCCESS) {
-        srs_error("transform config failed. ret=%d", ret);
-        return ret;
-    }
+    err = parse_file(config_file.c_str());
     
     if (test_conf) {
         // the parse_file never check the config,
         // we check it when user requires check config file.
-        if (ret == ERROR_SUCCESS) {
-            ret = check_config();
+        if (err == srs_success && (err = srs_config_transform_vhost(root)) == srs_success) {
+            if (err == srs_success && (err = check_config()) == srs_success) {
+                srs_trace("config file is ok");
+                exit(0);
+            }
         }
         
-        if (ret == ERROR_SUCCESS) {
-            srs_trace("config file is ok");
-            exit(0);
-        } else {
-            srs_error("config file is invalid");
-            exit(ret);
-        }
+        srs_error("invalid config, %s", srs_error_desc(err).c_str());
+        int ret = srs_error_code(err);
+        srs_freep(err);
+        exit(ret);
+    }
+    
+    // transform config to compatible with previous style of config.
+    if ((err = srs_config_transform_vhost(root)) != srs_success) {
+        return srs_error_wrap(err, "transform");
     }
     
     ////////////////////////////////////////////////////////////////////////
@@ -1994,9 +1955,7 @@ int SrsConfig::parse_options(int argc, char** argv)
     if (true) {
         std::string log_filename = this->get_log_file();
         if (get_log_tank_file() && log_filename.empty()) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("must specifies the file to write log to. ret=%d", ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "no log file");
         }
         if (get_log_tank_file()) {
             srs_trace("write log to file %s", log_filename.c_str());
@@ -2007,67 +1966,62 @@ int SrsConfig::parse_options(int argc, char** argv)
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::initialize_cwd()
+srs_error_t SrsConfig::initialize_cwd()
 {
-    int ret = ERROR_SUCCESS;
-    
     // cwd
     char cwd[256];
     getcwd(cwd, sizeof(cwd));
     _cwd = cwd;
     
-    return ret;
+    return srs_success;
 }
 
-int SrsConfig::persistence()
+srs_error_t SrsConfig::persistence()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // write to a tmp file, then mv to the config.
     std::string path = config_file + ".tmp";
     
     // open the tmp file for persistence
     SrsFileWriter fw;
-    if ((ret = fw.open(path)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = fw.open(path)) != srs_success) {
+        return srs_error_wrap(err, "open file");
     }
     
     // do persistence to writer.
-    if ((ret = do_persistence(&fw)) != ERROR_SUCCESS) {
+    if ((err = do_persistence(&fw)) != srs_success) {
         ::unlink(path.c_str());
-        return ret;
+        return srs_error_wrap(err, "persistence");
     }
     
     // rename the config file.
     if (::rename(path.c_str(), config_file.c_str()) < 0) {
         ::unlink(path.c_str());
-        
-        ret = ERROR_SYSTEM_CONFIG_PERSISTENCE;
-        srs_error("rename config from %s to %s failed. ret=%d", path.c_str(), config_file.c_str(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_PERSISTENCE, "rename %s=>%s", path.c_str(), config_file.c_str());
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_persistence(SrsFileWriter* fw)
+srs_error_t SrsConfig::do_persistence(SrsFileWriter* fw)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // persistence root directive to writer.
-    if ((ret = root->persistence(fw, 0)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = root->persistence(fw, 0)) != srs_success) {
+        return srs_error_wrap(err, "root persistence");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::minimal_to_json(SrsJsonObject* obj)
+srs_error_t SrsConfig::minimal_to_json(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     for (int i = 0; i < (int)root->directives.size(); i++) {
         SrsConfDirective* dir = root->directives.at(i);
@@ -2080,12 +2034,12 @@ int SrsConfig::minimal_to_json(SrsJsonObject* obj)
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::global_to_json(SrsJsonObject* obj)
+srs_error_t SrsConfig::global_to_json(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     for (int i = 0; i < (int)root->directives.size(); i++) {
         SrsConfDirective* dir = root->directives.at(i);
@@ -2349,12 +2303,12 @@ int SrsConfig::global_to_json(SrsJsonObject* obj)
     obj->set("nb_vhosts", SrsJsonAny::integer(nb_vhosts));
     obj->set("vhosts", sobjs);
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj)
+srs_error_t SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsConfDirective* dir = NULL;
     
@@ -2652,6 +2606,16 @@ int SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj)
                 hls->set("hls_nb_notify", sdir->dumps_arg0_to_integer());
             } else if (sdir->name == "hls_wait_keyframe") {
                 hls->set("hls_wait_keyframe", sdir->dumps_arg0_to_boolean());
+            } else if (sdir->name == "hls_keys") {
+                hls->set("hls_keys", sdir->dumps_arg0_to_boolean());
+            } else if (sdir->name == "hls_fragments_per_key") {
+                hls->set("hls_fragments_per_key", sdir->dumps_arg0_to_number());
+            } else if (sdir->name == "hls_key_file") {
+                hls->set("hls_key_file", sdir->dumps_arg0_to_str());
+            } else if (sdir->name == "hls_key_file_path") {
+                hls->set("hls_key_file_path", sdir->dumps_arg0_to_str());
+            } else if (sdir->name == "hls_key_url") {
+                hls->set("hls_key_url", sdir->dumps_arg0_to_str());
             }
         }
     }
@@ -2758,8 +2722,8 @@ int SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj)
                 SrsJsonObject* engine = SrsJsonAny::object();
                 ingest->set("engine", engine);
                 
-                if ((ret = srs_config_dumps_engine(sdir, engine)) != ERROR_SUCCESS) {
-                    return ret;
+                if ((err = srs_config_dumps_engine(sdir, engine)) != srs_success) {
+                    return srs_error_wrap(err, "dump engine");
                 }
             }
         }
@@ -2796,19 +2760,19 @@ int SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj)
                 SrsJsonObject* engine = SrsJsonAny::object();
                 engines->append(engine);
                 
-                if ((ret = srs_config_dumps_engine(sdir, engine)) != ERROR_SUCCESS) {
-                    return ret;
+                if ((err = srs_config_dumps_engine(sdir, engine)) != srs_success) {
+                    return srs_error_wrap(err, "dump engine");
                 }
             }
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_to_json(SrsJsonObject* obj)
+srs_error_t SrsConfig::raw_to_json(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsJsonObject* sobj = SrsJsonAny::object();
     obj->set("http_api", sobj);
@@ -2825,68 +2789,68 @@ int SrsConfig::raw_to_json(SrsJsonObject* obj)
     ssobj->set("allow_query", SrsJsonAny::boolean(get_raw_api_allow_query()));
     ssobj->set("allow_update", SrsJsonAny::boolean(get_raw_api_allow_update()));
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_listen(const vector<string>& eps, bool& applied)
+srs_error_t SrsConfig::raw_set_listen(const vector<string>& eps, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get("listen");
     
-    // not changed, ignore.
+    // nothing changed, ignore.
     if (srs_vector_actual_equals(conf->args, eps)) {
-        return ret;
+        return err;
     }
     
     // changed, apply and reload.
     conf->args = eps;
     
-    if ((ret = do_reload_listen()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_listen()) != srs_success) {
+        return srs_error_wrap(err, "reload listen");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_pid(string pid, bool& applied)
+srs_error_t SrsConfig::raw_set_pid(string pid, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("pid");
     
     if (conf->arg0() == pid) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(pid);
     
-    if ((ret = do_reload_pid()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_pid()) != srs_success) {
+        return srs_error_wrap(err, "reload pid");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_chunk_size(string chunk_size, bool& applied)
+srs_error_t SrsConfig::raw_set_chunk_size(string chunk_size, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("chunk_size");
     
     if (conf->arg0() == chunk_size) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
@@ -2896,19 +2860,19 @@ int SrsConfig::raw_set_chunk_size(string chunk_size, bool& applied)
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_ff_log_dir(string ff_log_dir, bool& applied)
+srs_error_t SrsConfig::raw_set_ff_log_dir(string ff_log_dir, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("ff_log_dir");
     
     if (conf->arg0() == ff_log_dir) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
@@ -2918,174 +2882,174 @@ int SrsConfig::raw_set_ff_log_dir(string ff_log_dir, bool& applied)
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_srs_log_tank(string srs_log_tank, bool& applied)
+srs_error_t SrsConfig::raw_set_srs_log_tank(string srs_log_tank, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("srs_log_tank");
     
     if (conf->arg0() == srs_log_tank) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(srs_log_tank);
     
-    if ((ret = do_reload_srs_log_tank()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_srs_log_tank()) != srs_success) {
+        return srs_error_wrap(err, "reload log tank");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_srs_log_level(string srs_log_level, bool& applied)
+srs_error_t SrsConfig::raw_set_srs_log_level(string srs_log_level, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("srs_log_level");
     
     if (conf->arg0() == srs_log_level) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(srs_log_level);
     
-    if ((ret = do_reload_srs_log_level()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_srs_log_level()) != srs_success) {
+        return srs_error_wrap(err, "reload log level");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_srs_log_file(string srs_log_file, bool& applied)
+srs_error_t SrsConfig::raw_set_srs_log_file(string srs_log_file, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("srs_log_file");
     
     if (conf->arg0() == srs_log_file) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(srs_log_file);
     
-    if ((ret = do_reload_srs_log_file()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_srs_log_file()) != srs_success) {
+        return srs_error_wrap(err, "reload log file");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_max_connections(string max_connections, bool& applied)
+srs_error_t SrsConfig::raw_set_max_connections(string max_connections, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("max_connections");
     
     if (conf->arg0() == max_connections) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(max_connections);
     
-    if ((ret = do_reload_max_connections()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_max_connections()) != srs_success) {
+        return srs_error_wrap(err, "reload max connection");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_utc_time(string utc_time, bool& applied)
+srs_error_t SrsConfig::raw_set_utc_time(string utc_time, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("utc_time");
     
     if (conf->arg0() == utc_time) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(utc_time);
     
-    if ((ret = do_reload_utc_time()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_utc_time()) != srs_success) {
+        return srs_error_wrap(err, "reload");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_set_pithy_print_ms(string pithy_print_ms, bool& applied)
+srs_error_t SrsConfig::raw_set_pithy_print_ms(string pithy_print_ms, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("pithy_print_ms");
     
     if (conf->arg0() == pithy_print_ms) {
-        return ret;
+        return err;
     }
     
     conf->args.clear();
     conf->args.push_back(pithy_print_ms);
     
-    if ((ret = do_reload_pithy_print_ms()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_pithy_print_ms()) != srs_success) {
+        return srs_error_wrap(err, "reload pithy print");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_create_vhost(string vhost, bool& applied)
+srs_error_t SrsConfig::raw_create_vhost(string vhost, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get_or_create("vhost", vhost);
     conf->get_or_create("enabled")->set_arg0("on");
     
-    if ((ret = do_reload_vhost_added(vhost)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_vhost_added(vhost)) != srs_success) {
+        return srs_error_wrap(err, "reload vhost");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_update_vhost(string vhost, string name, bool& applied)
+srs_error_t SrsConfig::raw_update_vhost(string vhost, string name, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
@@ -3095,12 +3059,12 @@ int SrsConfig::raw_update_vhost(string vhost, string name, bool& applied)
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_delete_vhost(string vhost, bool& applied)
+srs_error_t SrsConfig::raw_delete_vhost(string vhost, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
@@ -3114,48 +3078,48 @@ int SrsConfig::raw_delete_vhost(string vhost, bool& applied)
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_disable_vhost(string vhost, bool& applied)
+srs_error_t SrsConfig::raw_disable_vhost(string vhost, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get("vhost", vhost);
     conf->get_or_create("enabled")->set_arg0("off");
     
-    if ((ret = do_reload_vhost_removed(vhost)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_vhost_removed(vhost)) != srs_success) {
+        return srs_error_wrap(err, "reload vhost removed");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_enable_vhost(string vhost, bool& applied)
+srs_error_t SrsConfig::raw_enable_vhost(string vhost, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
     SrsConfDirective* conf = root->get("vhost", vhost);
     conf->get_or_create("enabled")->set_arg0("on");
     
-    if ((ret = do_reload_vhost_added(vhost)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_vhost_added(vhost)) != srs_success) {
+        return srs_error_wrap(err, "reload vhost added");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_enable_dvr(string vhost, string stream, bool& applied)
+srs_error_t SrsConfig::raw_enable_dvr(string vhost, string stream, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
@@ -3170,18 +3134,18 @@ int SrsConfig::raw_enable_dvr(string vhost, string stream, bool& applied)
         conf->args.push_back(stream);
     }
     
-    if ((ret = do_reload_vhost_dvr_apply(vhost)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_vhost_dvr_apply(vhost)) != srs_success) {
+        return srs_error_wrap(err, "reload vhost dvr");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::raw_disable_dvr(string vhost, string stream, bool& applied)
+srs_error_t SrsConfig::raw_disable_dvr(string vhost, string stream, bool& applied)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     applied = false;
     
@@ -3198,206 +3162,194 @@ int SrsConfig::raw_disable_dvr(string vhost, string stream, bool& applied)
         conf->args.push_back("none");
     }
     
-    if ((ret = do_reload_vhost_dvr_apply(vhost)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = do_reload_vhost_dvr_apply(vhost)) != srs_success) {
+        return srs_error_wrap(err, "reload vhost dvr");
     }
     
     applied = true;
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_listen()
+srs_error_t SrsConfig::do_reload_listen()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_listen()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload listen failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_listen()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload listen failed");
         }
     }
     srs_trace("reload listen success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_pid()
+srs_error_t SrsConfig::do_reload_pid()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_pid()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload pid failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_pid()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload pid failed");
         }
     }
     srs_trace("reload pid success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_srs_log_tank()
+srs_error_t SrsConfig::do_reload_srs_log_tank()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_log_tank()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload srs_log_tank failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_log_tank()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload srs_log_tank failed");
         }
     }
     srs_trace("reload srs_log_tank success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_srs_log_level()
+srs_error_t SrsConfig::do_reload_srs_log_level()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_log_level()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload srs_log_level failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_log_level()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload srs_log_level failed");
         }
     }
     srs_trace("reload srs_log_level success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_srs_log_file()
+srs_error_t SrsConfig::do_reload_srs_log_file()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_log_file()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload srs_log_file failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_log_file()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload srs_log_file failed");
         }
     }
     srs_trace("reload srs_log_file success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_max_connections()
+srs_error_t SrsConfig::do_reload_max_connections()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_max_conns()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes reload max_connections failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_max_conns()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes reload max_connections failed");
         }
     }
     srs_trace("reload max_connections success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_utc_time()
+srs_error_t SrsConfig::do_reload_utc_time()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_utc_time()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes utc_time failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_utc_time()) != srs_success) {
+            return srs_error_wrap(err, "utc_time");
         }
     }
     srs_trace("reload utc_time success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_pithy_print_ms()
+srs_error_t SrsConfig::do_reload_pithy_print_ms()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_pithy_print()) != ERROR_SUCCESS) {
-            srs_error("notify subscribes pithy_print_ms failed. ret=%d", ret);
-            return ret;
+        if ((err = subscribe->on_reload_pithy_print()) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes pithy_print_ms failed");
         }
     }
     srs_trace("reload pithy_print_ms success.");
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_vhost_added(string vhost)
+srs_error_t SrsConfig::do_reload_vhost_added(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_trace("vhost %s added, reload it.", vhost.c_str());
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_vhost_added(vhost)) != ERROR_SUCCESS) {
-            srs_error("notify subscribes added vhost %s failed. ret=%d", vhost.c_str(), ret);
-            return ret;
+        if ((err = subscribe->on_reload_vhost_added(vhost)) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes added vhost %s failed", vhost.c_str());
         }
     }
     
     srs_trace("reload new vhost %s success.", vhost.c_str());
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_vhost_removed(string vhost)
+srs_error_t SrsConfig::do_reload_vhost_removed(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_trace("vhost %s removed, reload it.", vhost.c_str());
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_vhost_removed(vhost)) != ERROR_SUCCESS) {
-            srs_error("notify subscribes removed "
-                      "vhost %s failed. ret=%d", vhost.c_str(), ret);
-            return ret;
+        if ((err = subscribe->on_reload_vhost_removed(vhost)) != srs_success) {
+            return srs_error_wrap(err, "notify subscribes removed vhost %s failed", vhost.c_str());
         }
     }
     srs_trace("reload removed vhost %s success.", vhost.c_str());
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::do_reload_vhost_dvr_apply(string vhost)
+srs_error_t SrsConfig::do_reload_vhost_dvr_apply(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     vector<ISrsReloadHandler*>::iterator it;
     for (it = subscribes.begin(); it != subscribes.end(); ++it) {
         ISrsReloadHandler* subscribe = *it;
-        if ((ret = subscribe->on_reload_vhost_dvr_apply(vhost)) != ERROR_SUCCESS) {
-            srs_error("vhost %s notify subscribes dvr_apply failed. ret=%d", vhost.c_str(), ret);
-            return ret;
+        if ((err = subscribe->on_reload_vhost_dvr_apply(vhost)) != srs_success) {
+            return srs_error_wrap(err, "vhost %s notify subscribes dvr_apply failed", vhost.c_str());
         }
     }
     srs_trace("vhost %s reload dvr_apply success.", vhost.c_str());
     
-    return ret;
+    return err;
 }
 
 string SrsConfig::config()
@@ -3405,15 +3357,15 @@ string SrsConfig::config()
     return config_file;
 }
 
-int SrsConfig::parse_argv(int& i, char** argv)
+srs_error_t SrsConfig::parse_argv(int& i, char** argv)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     char* p = argv[i];
     
     if (*p++ != '-') {
         show_help = true;
-        return ret;
+        return err;
     }
     
     while (*p) {
@@ -3436,9 +3388,7 @@ int SrsConfig::parse_argv(int& i, char** argv)
                     dolphin_rtmp_port = argv[i];
                     continue;
                 }
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("option \"-p\" requires params, ret=%d", ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "-p requires params");
             case 'x':
                 dolphin = true;
                 if (*p) {
@@ -3449,9 +3399,7 @@ int SrsConfig::parse_argv(int& i, char** argv)
                     dolphin_http_port = argv[i];
                     continue;
                 }
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("option \"-x\" requires params, ret=%d", ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "-x requires params");
             case 'v':
             case 'V':
                 show_help = false;
@@ -3472,17 +3420,14 @@ int SrsConfig::parse_argv(int& i, char** argv)
                     config_file = argv[i];
                     continue;
                 }
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("option \"-c\" requires parameter, ret=%d", ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "-c requires params");
             default:
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("invalid option: \"%c\", see help: %s -h, ret=%d", *(p - 1), argv[0], ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "invalid option: \"%c\", read help: %s -h",
+                    *(p - 1), argv[0]);
         }
     }
     
-    return ret;
+    return err;
 }
 
 void SrsConfig::print_help(char** argv)
@@ -3494,7 +3439,7 @@ void SrsConfig::print_help(char** argv)
            "Authors: " RTMP_SIG_SRS_AUTHROS "\n"
            "Build: " SRS_AUTO_BUILD_DATE " Configuration:" SRS_AUTO_USER_CONFIGURE "\n"
            "Features:" SRS_AUTO_CONFIGURE "\n""\n"
-           "Usage: %s [-h?vVsS] [[-t] -c <filename>]\n"
+           "Usage: %s [-h?vVgG] [[-t] -c <filename>]\n"
            "\n"
            "Options:\n"
            "   -?, -h              : show this help and exit(0)\n"
@@ -3502,9 +3447,6 @@ void SrsConfig::print_help(char** argv)
            "   -g, -G              : show server signature and exit(0)\n"
            "   -t                  : test configuration file, exit(error_code).\n"
            "   -c filename         : use configuration file for SRS\n"
-           "For srs-dolphin:\n"
-           "   -p  rtmp-port       : the rtmp port to listen.\n"
-           "   -x  http-port       : the http port to listen.\n"
            "\n"
            RTMP_SIG_SRS_WEB "\n"
            RTMP_SIG_SRS_URL "\n"
@@ -3517,43 +3459,47 @@ void SrsConfig::print_help(char** argv)
            argv[0], argv[0], argv[0], argv[0]);
 }
 
-int SrsConfig::parse_file(const char* filename)
+srs_error_t SrsConfig::parse_file(const char* filename)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     config_file = filename;
     
     if (config_file.empty()) {
-        return ERROR_SYSTEM_CONFIG_INVALID;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "empty config");
     }
     
     SrsConfigBuffer buffer;
     
-    if ((ret = buffer.fullfill(config_file.c_str())) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = buffer.fullfill(config_file.c_str())) != srs_success) {
+        return srs_error_wrap(err, "buffer fullfil");
     }
     
-    return parse_buffer(&buffer);
+    if ((err = parse_buffer(&buffer)) != srs_success) {
+        return srs_error_wrap(err, "parse buffer");
+    }
+    
+    return err;
 }
 
-int SrsConfig::check_config()
+srs_error_t SrsConfig::check_config()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = check_normal_config()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = check_normal_config()) != srs_success) {
+        return srs_error_wrap(err, "check normal");
     }
     
-    if ((ret = check_number_connections()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = check_number_connections()) != srs_success) {
+        return srs_error_wrap(err, "check connections");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::check_normal_config()
+srs_error_t SrsConfig::check_normal_config()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_trace("srs checking config...");
     
@@ -3561,9 +3507,7 @@ int SrsConfig::check_normal_config()
     // check empty
     ////////////////////////////////////////////////////////////////////////
     if (root->directives.size() == 0) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("conf is empty, ret=%d", ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "conf is empty");
     }
     
     ////////////////////////////////////////////////////////////////////////
@@ -3579,9 +3523,7 @@ int SrsConfig::check_normal_config()
             && n != "http_server" && n != "stream_caster" && n != "kafka"
             && n != "utc_time" && n != "work_dir" && n != "asprocess"
             ) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("unsupported directive %s, ret=%d", n.c_str(), ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal directive %s", n.c_str());
         }
     }
     if (true) {
@@ -3590,18 +3532,14 @@ int SrsConfig::check_normal_config()
             SrsConfDirective* obj = conf->at(i);
             string n = obj->name;
             if (n != "enabled" && n != "listen" && n != "crossdomain" && n != "raw_api") {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported http_api directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal http_api.%s", n.c_str());
             }
             
             if (n == "raw_api") {
                 for (int j = 0; j < (int)obj->directives.size(); j++) {
                     string m = obj->at(j)->name;
                     if (m != "enabled" && m != "allow_reload" && m != "allow_query" && m != "allow_update") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported http_api.raw_api directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal http_api.raw_api.%s", m.c_str());
                     }
                 }
             }
@@ -3612,9 +3550,7 @@ int SrsConfig::check_normal_config()
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
             if (n != "enabled" && n != "listen" && n != "dir" && n != "crossdomain") {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported http_stream directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal http_stream.%s", n.c_str());
             }
         }
     }
@@ -3623,9 +3559,7 @@ int SrsConfig::check_normal_config()
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
             if (n != "enabled" && n != "brokers" && n != "topic") {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported kafka directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal kafka.%s", n.c_str());
             }
         }
     }
@@ -3634,11 +3568,8 @@ int SrsConfig::check_normal_config()
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
             if (n != "enabled" && n != "interval" && n != "url"
-                && n != "device_id" && n != "summaries"
-                ) {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported heartbeat directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                && n != "device_id" && n != "summaries") {
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal heartbeat.%s", n.c_str());
             }
         }
     }
@@ -3647,9 +3578,7 @@ int SrsConfig::check_normal_config()
         for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
             string n = conf->at(i)->name;
             if (n != "network" && n != "disk") {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported stats directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal stats.%s", n.c_str());
             }
         }
     }
@@ -3660,16 +3589,12 @@ int SrsConfig::check_normal_config()
     if (true) {
         vector<string> listens = get_listens();
         if (listens.size() <= 0) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("directive \"listen\" is empty, ret=%d", ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "listen requires params");
         }
         for (int i = 0; i < (int)listens.size(); i++) {
             string port = listens[i];
             if (port.empty() || ::atoi(port.c_str()) <= 0) {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("directive listen invalid, port=%s, ret=%d", port.c_str(), ret);
-                return ret;
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "listen.port=%d is invalid", port.c_str());
             }
         }
     }
@@ -3678,29 +3603,22 @@ int SrsConfig::check_normal_config()
     // check heartbeat
     ////////////////////////////////////////////////////////////////////////
     if (get_heartbeat_interval() <= 0) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive heartbeat interval invalid, interval=%" PRId64 ", ret=%d",
-                  get_heartbeat_interval(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "invalid heartbeat.interval=%" PRId64,
+            get_heartbeat_interval());
     }
     
     ////////////////////////////////////////////////////////////////////////
     // check stats
     ////////////////////////////////////////////////////////////////////////
     if (get_stats_network() < 0) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive stats network invalid, network=%d, ret=%d",
-                  get_stats_network(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "invalid stats.network=%d", get_stats_network());
     }
     if (true) {
-        vector<std::string> ips = srs_get_local_ipv4_ips();
+        vector<std::string> ips = srs_get_local_ips();
         int index = get_stats_network();
         if (index >= (int)ips.size()) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("stats network invalid, total local ip count=%d, index=%d, ret=%d",
-                      (int)ips.size(), index, ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "invalid stats.network=%d of %d",
+                index, (int)ips.size());
         }
         srs_warn("stats network use index=%d, ip=%s", index, ips.at(index).c_str());
     }
@@ -3722,20 +3640,14 @@ int SrsConfig::check_normal_config()
     // check http api
     ////////////////////////////////////////////////////////////////////////
     if (get_http_api_listen().empty()) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive http_api listen invalid, listen=%s, ret=%d",
-                  get_http_api_listen().c_str(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "http_api.listen requires params");
     }
     
     ////////////////////////////////////////////////////////////////////////
     // check http stream
     ////////////////////////////////////////////////////////////////////////
     if (get_http_stream_listen().empty()) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive http_stream listen invalid, listen=%s, ret=%d",
-                  get_http_stream_listen().c_str(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "http_stream.listen requires params");
     }
     
     ////////////////////////////////////////////////////////////////////////
@@ -3744,9 +3656,7 @@ int SrsConfig::check_normal_config()
     if (true) {
         std::string log_filename = this->get_log_file();
         if (get_log_tank_file() && log_filename.empty()) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("must specifies the file to write log to. ret=%d", ret);
-            return ret;
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "log file is empty");
         }
         if (get_log_tank_file()) {
             srs_trace("write log to file %s", log_filename.c_str());
@@ -3767,11 +3677,8 @@ int SrsConfig::check_normal_config()
             SrsConfDirective* conf = stream_caster->at(i);
             string n = conf->name;
             if (n != "enabled" && n != "caster" && n != "output"
-                && n != "listen" && n != "rtp_port_min" && n != "rtp_port_max"
-                ) {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported stream_caster directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                && n != "listen" && n != "rtp_port_min" && n != "rtp_port_max") {
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal stream_caster.%s", n.c_str());
             }
         }
     }
@@ -3792,96 +3699,74 @@ int SrsConfig::check_normal_config()
                 && n != "play" && n != "publish" && n != "cluster"
                 && n != "security" && n != "http_remux" && n != "dash"
                 && n != "http_static" && n != "hds" && n != "exec"
-                && n != "in_ack_size" && n != "out_ack_size"
-                ) {
-                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                srs_error("unsupported vhost directive %s, ret=%d", n.c_str(), ret);
-                return ret;
+                && n != "in_ack_size" && n != "out_ack_size") {
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.%s", n.c_str());
             }
             // for each sub directives of vhost.
             if (n == "dvr") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled"  && m != "dvr_apply" && m != "dvr_path" && m != "dvr_plan"
-                        && m != "dvr_duration" && m != "dvr_wait_keyframe" && m != "time_jitter"
-                        ) {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost dvr directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        && m != "dvr_duration" && m != "dvr_wait_keyframe" && m != "time_jitter") {
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.dvr.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "refer") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "all" && m != "publish" && m != "play") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost refer directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.refer.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "exec") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "publish") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost exec directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.exec.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "play") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "time_jitter" && m != "mix_correct" && m != "atc" && m != "atc_auto" && m != "mw_latency"
-                        && m != "gop_cache" && m != "queue_length" && m != "send_min_interval" && m != "reduce_sequence_header"
-                        ) {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost play directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        && m != "gop_cache" && m != "queue_length" && m != "send_min_interval" && m != "reduce_sequence_header") {
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.play.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "cluster") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
-                    if (m != "mode" && m != "origin" && m != "token_traverse" && m != "vhost" && m != "debug_srs_upnode") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost cluster directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                    if (m != "mode" && m != "origin" && m != "token_traverse" && m != "vhost" && m != "debug_srs_upnode" && m != "coworkers"
+                        && m != "origin_cluster") {
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.cluster.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "publish") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "mr" && m != "mr_latency" && m != "firstpkt_timeout" && m != "normal_timeout" && m != "parse_sps") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost publish directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.publish.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "ingest") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "input" && m != "ffmpeg" && m != "engine") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost ingest directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.ingest.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "http_static") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "mount" && m != "dir") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost http directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.http_static.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "http_remux") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "mount" && m != "fast_cache") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost http_remux directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.http_remux.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "dash") {
@@ -3889,9 +3774,7 @@ int SrsConfig::check_normal_config()
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "dash_fragment" && m != "dash_update_period" && m != "dash_timeshift" && m != "dash_path"
                         && m != "dash_mpd_file") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("Illegal directive %s in vhost.dash, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.dash.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "hls") {
@@ -3900,16 +3783,14 @@ int SrsConfig::check_normal_config()
                     if (m != "enabled" && m != "hls_entry_prefix" && m != "hls_path" && m != "hls_fragment" && m != "hls_window" && m != "hls_on_error"
                         && m != "hls_storage" && m != "hls_mount" && m != "hls_td_ratio" && m != "hls_aof_ratio" && m != "hls_acodec" && m != "hls_vcodec"
                         && m != "hls_m3u8_file" && m != "hls_ts_file" && m != "hls_ts_floor" && m != "hls_cleanup" && m != "hls_nb_notify"
-                        && m != "hls_wait_keyframe" && m != "hls_dispose"
-                        ) {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost hls directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        && m != "hls_wait_keyframe" && m != "hls_dispose" && m != "hls_keys" && m != "hls_fragments_per_key" && m != "hls_key_file"
+                        && m != "hls_key_file_path" && m != "hls_key_url") {
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.hls.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                     
                     // TODO: FIXME: remove it in future.
                     if (m == "hls_storage" || m == "hls_mount") {
-                        srs_warn("HLS RAM is removed from SRS2 to SRS3+, please read https://github.com/ossrs/srs/issues/513.");
+                        srs_warn("HLS RAM is removed in SRS3+, read https://github.com/ossrs/srs/issues/513.");
                     }
                 }
             } else if (n == "http_hooks") {
@@ -3917,20 +3798,15 @@ int SrsConfig::check_normal_config()
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "on_connect" && m != "on_close" && m != "on_publish"
                         && m != "on_unpublish" && m != "on_play" && m != "on_stop"
-                        && m != "on_dvr" && m != "on_hls" && m != "on_hls_notify"
-                        ) {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost http_hooks directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        && m != "on_dvr" && m != "on_hls" && m != "on_hls_notify") {
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.http_hooks.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "forward") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "destination") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost forward directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.forward.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "security") {
@@ -3938,9 +3814,7 @@ int SrsConfig::check_normal_config()
                     SrsConfDirective* security = conf->at(j);
                     string m = security->name.c_str();
                     if (m != "enabled" && m != "deny" && m != "allow") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost security directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.security.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             } else if (n == "transcode") {
@@ -3948,9 +3822,7 @@ int SrsConfig::check_normal_config()
                     SrsConfDirective* trans = conf->at(j);
                     string m = trans->name.c_str();
                     if (m != "enabled" && m != "ffmpeg" && m != "engine") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost transcode directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.transcode.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                     if (m == "engine") {
                         for (int k = 0; k < (int)trans->directives.size(); k++) {
@@ -3960,11 +3832,8 @@ int SrsConfig::check_normal_config()
                                 && e != "vthreads" && e != "vprofile" && e != "vpreset" && e != "vparams"
                                 && e != "acodec" && e != "abitrate" && e != "asample_rate" && e != "achannels"
                                 && e != "aparams" && e != "output" && e != "perfile"
-                                && e != "iformat" && e != "oformat"
-                                ) {
-                                ret = ERROR_SYSTEM_CONFIG_INVALID;
-                                srs_error("unsupported vhost transcode engine directive %s, ret=%d", e.c_str(), ret);
-                                return ret;
+                                && e != "iformat" && e != "oformat") {
+                                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.transcode.engine.%s of %s", m.c_str(), vhost->arg0().c_str());
                             }
                         }
                     }
@@ -3973,9 +3842,7 @@ int SrsConfig::check_normal_config()
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "key" && m != "interval" && m != "limit_kbps") {
-                        ret = ERROR_SYSTEM_CONFIG_INVALID;
-                        srs_error("unsupported vhost bandcheck directive %s, ret=%d", m.c_str(), ret);
-                        return ret;
+                        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.bandcheck.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
                 }
             }
@@ -3995,10 +3862,8 @@ int SrsConfig::check_normal_config()
             std::string id = conf->arg0();
             for (int k = 0; k < (int)ids.size(); k++) {
                 if (id == ids.at(k)) {
-                    ret = ERROR_SYSTEM_CONFIG_INVALID;
-                    srs_error("directive \"ingest\" id duplicated, vhost=%s, id=%s, ret=%d",
-                              vhost->name.c_str(), id.c_str(), ret);
-                    return ret;
+                    return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "ingest id=%s exists for %s",
+                        id.c_str(), vhost->arg0().c_str());
                 }
             }
             ids.push_back(id);
@@ -4009,38 +3874,30 @@ int SrsConfig::check_normal_config()
     // check chunk size
     ////////////////////////////////////////////////////////////////////////
     if (get_global_chunk_size() < SRS_CONSTS_RTMP_MIN_CHUNK_SIZE
-        || get_global_chunk_size() > SRS_CONSTS_RTMP_MAX_CHUNK_SIZE
-        ) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive chunk_size invalid, chunk_size=%d, must in [%d, %d], ret=%d",
-                  get_global_chunk_size(), SRS_CONSTS_RTMP_MIN_CHUNK_SIZE,
-                  SRS_CONSTS_RTMP_MAX_CHUNK_SIZE, ret);
-        return ret;
+        || get_global_chunk_size() > SRS_CONSTS_RTMP_MAX_CHUNK_SIZE) {
+        srs_warn("chunk_size=%s should be in [%d, %d]", get_global_chunk_size(),
+            SRS_CONSTS_RTMP_MIN_CHUNK_SIZE, SRS_CONSTS_RTMP_MAX_CHUNK_SIZE);
     }
     for (int i = 0; i < (int)vhosts.size(); i++) {
         SrsConfDirective* vhost = vhosts[i];
         if (get_chunk_size(vhost->arg0()) < SRS_CONSTS_RTMP_MIN_CHUNK_SIZE
-            || get_chunk_size(vhost->arg0()) > SRS_CONSTS_RTMP_MAX_CHUNK_SIZE
-            ) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
-            srs_error("directive vhost %s chunk_size invalid, chunk_size=%d, must in [%d, %d], ret=%d",
-                      vhost->arg0().c_str(), get_chunk_size(vhost->arg0()), SRS_CONSTS_RTMP_MIN_CHUNK_SIZE,
-                      SRS_CONSTS_RTMP_MAX_CHUNK_SIZE, ret);
-            return ret;
+            || get_chunk_size(vhost->arg0()) > SRS_CONSTS_RTMP_MAX_CHUNK_SIZE) {
+            srs_warn("chunk_size=%s of %s should be in [%d, %d]", get_global_chunk_size(), vhost->arg0().c_str(),
+                SRS_CONSTS_RTMP_MIN_CHUNK_SIZE, SRS_CONSTS_RTMP_MAX_CHUNK_SIZE);
         }
     }
     for (int i = 0; i < (int)vhosts.size(); i++) {
         SrsConfDirective* vhost = vhosts[i];
         srs_assert(vhost != NULL);
         if (get_dvr_enabled(vhost->arg0())) {
-            srs_warn("dvr of vhost %s is disabled by configure", vhost->arg0().c_str());
+            srs_warn("can't enable vhost.dvr of %s", vhost->arg0().c_str());
         }
         if (get_hls_enabled(vhost->arg0())) {
-            srs_warn("hls of vhost %s is disabled by configure", vhost->arg0().c_str());
+            srs_warn("can't enable vhost.hls of %s", vhost->arg0().c_str());
         }
 #ifndef SRS_AUTO_TRANSCODE
         if (get_transcode_enabled(get_transcode(vhost->arg0(), ""))) {
-            srs_warn("transcode of vhost %s is disabled by configure", vhost->arg0().c_str());
+            srs_warn("can't enable vhost.transcode of %s", vhost->arg0().c_str());
         }
 #endif
 #ifndef SRS_AUTO_INGEST
@@ -4048,9 +3905,8 @@ int SrsConfig::check_normal_config()
         for (int j = 0; j < (int)ingesters.size(); j++) {
             SrsConfDirective* ingest = ingesters[j];
             if (get_ingest_enabled(ingest)) {
-                srs_warn("ingest %s of vhost %s is disabled by configure",
-                         ingest->arg0().c_str(), vhost->arg0().c_str()
-                         );
+                srs_warn("cant' enable vhost.ingest.%s of %s",
+                    ingest->arg0().c_str(), vhost->arg0().c_str());
             }
         }
 #endif
@@ -4059,25 +3915,21 @@ int SrsConfig::check_normal_config()
     
     // asprocess conflict with daemon
     if (get_asprocess() && get_deamon()) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("daemon conflict with asprocess, ret=%d", ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "daemon conflicts with asprocess");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::check_number_connections()
+srs_error_t SrsConfig::check_number_connections()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     ////////////////////////////////////////////////////////////////////////
     // check max connections
     ////////////////////////////////////////////////////////////////////////
     if (get_max_connections() <= 0) {
-        ret = ERROR_SYSTEM_CONFIG_INVALID;
-        srs_error("directive max_connections invalid, max_connections=%d, ret=%d", get_max_connections(), ret);
-        return ret;
+        return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "max_connections=%d is invalid", get_max_connections());
     }
     
     // check max connections of system limits
@@ -4104,27 +3956,27 @@ int SrsConfig::check_number_connections()
         // for each play connections, we open a pipe(2fds) to convert SrsConsumver to io,
         // refine performance, @see: https://github.com/ossrs/srs/issues/194
         if (nb_total >= max_open_files) {
-            ret = ERROR_SYSTEM_CONFIG_INVALID;
             srs_error("invalid max_connections=%d, required=%d, system limit to %d, "
-                      "total=%d(max_connections=%d, nb_consumed_fds=%d), ret=%d. "
+                      "total=%d(max_connections=%d, nb_consumed_fds=%d). "
                       "you can change max_connections from %d to %d, or "
                       "you can login as root and set the limit: ulimit -HSn %d",
                       nb_connections, nb_total + 100, max_open_files,
                       nb_total, nb_connections, nb_consumed_fds,
-                      ret, nb_connections, nb_canbe, nb_total + 100);
-            return ret;
+                      nb_connections, nb_canbe, nb_total + 100);
+            return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "%d exceed max open files=%d",
+                nb_total, max_open_files);
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsConfig::parse_buffer(SrsConfigBuffer* buffer)
+srs_error_t SrsConfig::parse_buffer(SrsConfigBuffer* buffer)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = root->parse(buffer)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = root->parse(buffer)) != srs_success) {
+        return srs_error_wrap(err, "root parse");
     }
     
     // mock by dolphin mode.
@@ -4144,7 +3996,7 @@ int SrsConfig::parse_buffer(SrsConfigBuffer* buffer)
         set_config_directive(root, "srs_log_tank", "console");
     }
     
-    return ret;
+    return err;
 }
 
 string SrsConfig::cwd()
@@ -5317,6 +5169,50 @@ string SrsConfig::get_vhost_edge_transform_vhost(string vhost)
     return conf->arg0();
 }
 
+bool SrsConfig::get_vhost_origin_cluster(string vhost)
+{
+    static bool DEFAULT = false;
+    
+    SrsConfDirective* conf = get_vhost(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("cluster");
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("origin_cluster");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return SRS_CONF_PERFER_FALSE(conf->arg0());
+}
+
+vector<string> SrsConfig::get_vhost_coworkers(string vhost)
+{
+    vector<string> coworkers;
+
+    SrsConfDirective* conf = get_vhost(vhost);
+    if (!conf) {
+        return coworkers;
+    }
+
+    conf = conf->get("cluster");
+    if (!conf) {
+        return coworkers;
+    }
+
+    conf = conf->get("coworkers");
+    for (int i = 0; i < (int)conf->args.size(); i++) {
+        coworkers.push_back(conf->args.at(i));
+    }
+
+    return coworkers;
+}
+
 bool SrsConfig::get_security_enabled(string vhost)
 {
     static bool DEFAULT = false;
@@ -6013,7 +5909,7 @@ bool SrsConfig::get_dash_enabled(string vhost)
 
 int SrsConfig::get_dash_fragment(string vhost)
 {
-    static int DEFAULT = 10 * 1000;
+    static int DEFAULT = 3 * 1000;
     
     SrsConfDirective* conf = get_dash(vhost);
     if (!conf) {
@@ -6391,6 +6287,93 @@ bool SrsConfig::get_hls_wait_keyframe(string vhost)
     }
     
     return SRS_CONF_PERFER_TRUE(conf->arg0());
+}
+
+bool SrsConfig::get_hls_keys(string vhost)
+{
+    static bool DEFAULT = false;
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_keys");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return SRS_CONF_PERFER_TRUE(conf->arg0());
+}
+
+int SrsConfig::get_hls_fragments_per_key(string vhost)
+{
+    static int DEFAULT = 5;
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_fragments_per_key");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return ::atoi(conf->arg0().c_str());
+}
+
+string SrsConfig::get_hls_key_file(string vhost)
+{
+    static string DEFAULT = "[app]/[stream]-[seq].key";
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_key_file");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return conf->arg0();
+}
+
+string SrsConfig::get_hls_key_file_path(std::string vhost)
+{
+     //put the key in ts path defaultly.
+    static string DEFAULT = get_hls_path(vhost);
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_key_file_path");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return conf->arg0();
+}
+
+string SrsConfig::get_hls_key_url(std::string vhost)
+{
+     //put the key in ts path defaultly.
+    static string DEFAULT = get_hls_path(vhost);
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_key_url");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return conf->arg0();
 }
 
 SrsConfDirective *SrsConfig::get_hds(const string &vhost)

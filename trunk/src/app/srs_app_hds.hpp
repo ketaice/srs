@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -41,15 +41,15 @@ public:
     SrsHds();
     virtual ~SrsHds();
     
-    int on_publish(SrsRequest* req);
-    int on_unpublish();
+    srs_error_t on_publish(SrsRequest* req);
+    srs_error_t on_unpublish();
     
-    int on_video(SrsSharedPtrMessage* msg);
-    int on_audio(SrsSharedPtrMessage* msg);
+    srs_error_t on_video(SrsSharedPtrMessage* msg);
+    srs_error_t on_audio(SrsSharedPtrMessage* msg);
     
 private:
-    int flush_mainfest();
-    int flush_bootstrap();
+    srs_error_t flush_mainfest();
+    srs_error_t flush_bootstrap();
     void adjust_windows();
     
 private:

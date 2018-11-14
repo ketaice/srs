@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -47,7 +47,7 @@ public:
     virtual void elapse(int64_t diff);
     virtual bool can_print();
 public:
-    virtual int on_reload_pithy_print();
+    virtual srs_error_t on_reload_pithy_print();
 };
 
 /**

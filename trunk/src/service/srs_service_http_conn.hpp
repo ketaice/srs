@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -30,10 +30,10 @@
 
 #include <srs_http_stack.hpp>
 
-class ISrsProtocolReaderWriter;
 class SrsConnection;
 class SrsFastStream;
 class SrsRequest;
+class ISrsReader;
 class SrsHttpResponseReader;
 class SrsStSocket;
 
@@ -69,7 +69,7 @@ public:
      * one parser can only parse request or response messages.
      * @param allow_jsonp whether allow jsonp parser, which indicates the method in query string.
      */
-    virtual int initialize(enum http_parser_type type, bool allow_jsonp);
+    virtual srs_error_t initialize(enum http_parser_type type, bool allow_jsonp);
     /**
      * always parse a http message,
      * that is, the *ppmsg always NOT-NULL when return success.
@@ -77,12 +77,12 @@ public:
      * @remark, if success, *ppmsg always NOT-NULL, *ppmsg always is_complete().
      * @remark user must free the ppmsg if not NULL.
      */
-    virtual int parse_message(ISrsProtocolReaderWriter* io, SrsConnection* conn, ISrsHttpMessage** ppmsg);
+    virtual srs_error_t parse_message(ISrsReader* reader, ISrsHttpMessage** ppmsg);
 private:
     /**
      * parse the HTTP message to member field: msg.
      */
-    virtual int parse_message_imp(ISrsProtocolReaderWriter* io);
+    virtual srs_error_t parse_message_imp(ISrsReader* reader);
 private:
     static int on_message_begin(http_parser* parser);
     static int on_headers_complete(http_parser* parser);
@@ -149,21 +149,23 @@ private:
     // the query map
     std::map<std::string, std::string> _query;
     // the transport connection, can be NULL.
-    SrsConnection* conn;
+    SrsConnection* owner_conn;
     // whether request is jsonp.
     bool jsonp;
     // the method in QueryString will override the HTTP method.
     std::string jsonp_method;
 public:
-    SrsHttpMessage(ISrsProtocolReaderWriter* io, SrsConnection* c);
+    SrsHttpMessage(ISrsReader* io);
     virtual ~SrsHttpMessage();
 public:
     /**
      * set the original messages, then update the message.
      */
-    virtual int update(std::string url, bool allow_jsonp, http_parser* header, SrsFastStream* body, std::vector<SrsHttpHeaderField>& headers);
+    virtual srs_error_t update(std::string url, bool allow_jsonp, http_parser* header, SrsFastStream* body, std::vector<SrsHttpHeaderField>& headers);
 public:
+    // Get the owner connection, maybe NULL.
     virtual SrsConnection* connection();
+    virtual void set_connection(SrsConnection* conn);
 public:
     virtual uint8_t method();
     virtual uint16_t status_code();
@@ -206,13 +208,13 @@ public:
      */
     virtual int parse_rest_id(std::string pattern);
 public:
-    virtual int enter_infinite_chunked();
+    virtual srs_error_t enter_infinite_chunked();
 public:
     /**
      * read body to string.
      * @remark for small http body.
      */
-    virtual int body_read_all(std::string& body);
+    virtual srs_error_t body_read_all(std::string& body);
     /**
      * get the body reader, to read one by one.
      * @remark when body is very large, or chunked, use this.
@@ -281,12 +283,12 @@ public:
     SrsHttpResponseWriter(SrsStSocket* io);
     virtual ~SrsHttpResponseWriter();
 public:
-    virtual int final_request();
+    virtual srs_error_t final_request();
     virtual SrsHttpHeader* header();
-    virtual int write(char* data, int size);
-    virtual int writev(const iovec* iov, int iovcnt, ssize_t* pnwrite);
+    virtual srs_error_t write(char* data, int size);
+    virtual srs_error_t writev(const iovec* iov, int iovcnt, ssize_t* pnwrite);
     virtual void write_header(int code);
-    virtual int send_header(char* data, int size);
+    virtual srs_error_t send_header(char* data, int size);
 };
 
 /**
@@ -295,7 +297,7 @@ public:
 class SrsHttpResponseReader : virtual public ISrsHttpResponseReader
 {
 private:
-    ISrsProtocolReaderWriter* skt;
+    ISrsReader* skt;
     SrsHttpMessage* owner;
     SrsFastStream* buffer;
     bool is_eof;
@@ -306,20 +308,20 @@ private:
     // already read total bytes.
     int64_t nb_total_read;
 public:
-    SrsHttpResponseReader(SrsHttpMessage* msg, ISrsProtocolReaderWriter* io);
+    SrsHttpResponseReader(SrsHttpMessage* msg, ISrsReader* reader);
     virtual ~SrsHttpResponseReader();
 public:
     /**
      * initialize the response reader with buffer.
      */
-    virtual int initialize(SrsFastStream* buffer);
+    virtual srs_error_t initialize(SrsFastStream* buffer);
     // interface ISrsHttpResponseReader
 public:
     virtual bool eof();
-    virtual int read(char* data, int nb_data, int* nb_read);
+    virtual srs_error_t read(char* data, int nb_data, int* nb_read);
 private:
-    virtual int read_chunked(char* data, int nb_data, int* nb_read);
-    virtual int read_specified(char* data, int nb_data, int* nb_read);
+    virtual srs_error_t read_chunked(char* data, int nb_data, int* nb_read);
+    virtual srs_error_t read_specified(char* data, int nb_data, int* nb_read);
 };
 
 #endif

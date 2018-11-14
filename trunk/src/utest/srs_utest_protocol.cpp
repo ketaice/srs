@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2017 OSSRS(winlin)
+Copyright (c) 2013-2018 Winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -33,6 +33,7 @@ using namespace std;
 #include <srs_app_st.hpp>
 #include <srs_protocol_amf0.hpp>
 #include <srs_rtmp_stack.hpp>
+#include <srs_service_http_conn.hpp>
 
 MockEmptyIO::MockEmptyIO()
 {
@@ -47,14 +48,14 @@ bool MockEmptyIO::is_never_timeout(int64_t /*tm*/)
     return true;
 }
 
-int MockEmptyIO::read_fully(void* /*buf*/, size_t /*size*/, ssize_t* /*nread*/)
+srs_error_t MockEmptyIO::read_fully(void* /*buf*/, size_t /*size*/, ssize_t* /*nread*/)
 {
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int MockEmptyIO::write(void* /*buf*/, size_t /*size*/, ssize_t* /*nwrite*/)
+srs_error_t MockEmptyIO::write(void* /*buf*/, size_t /*size*/, ssize_t* /*nwrite*/)
 {
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 void MockEmptyIO::set_recv_timeout(int64_t /*tm*/)
@@ -85,14 +86,14 @@ int64_t MockEmptyIO::get_send_bytes()
     return 0;
 }
 
-int MockEmptyIO::writev(const iovec */*iov*/, int /*iov_size*/, ssize_t* /*nwrite*/)
+srs_error_t MockEmptyIO::writev(const iovec */*iov*/, int /*iov_size*/, ssize_t* /*nwrite*/)
 {
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int MockEmptyIO::read(void* /*buf*/, size_t /*size*/, ssize_t* /*nread*/)
+srs_error_t MockEmptyIO::read(void* /*buf*/, size_t /*size*/, ssize_t* /*nread*/)
 {
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 MockBufferIO::MockBufferIO()
@@ -105,15 +106,21 @@ MockBufferIO::~MockBufferIO()
 {
 }
 
+MockBufferIO* MockBufferIO::append(string data)
+{
+    in_buffer.append(data.data(), data.length());
+    return this;
+}
+
 bool MockBufferIO::is_never_timeout(int64_t tm)
 {
     return tm == SRS_CONSTS_NO_TMMS;
 }
 
-int MockBufferIO::read_fully(void* buf, size_t size, ssize_t* nread)
+srs_error_t MockBufferIO::read_fully(void* buf, size_t size, ssize_t* nread)
 {
     if (in_buffer.length() < (int)size) {
-        return ERROR_SOCKET_READ;
+        return srs_error_new(ERROR_SOCKET_READ, "read");
     }
     memcpy(buf, in_buffer.bytes(), size);
     
@@ -122,17 +129,17 @@ int MockBufferIO::read_fully(void* buf, size_t size, ssize_t* nread)
         *nread = size;
     }
     in_buffer.erase(size);
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int MockBufferIO::write(void* buf, size_t size, ssize_t* nwrite)
+srs_error_t MockBufferIO::write(void* buf, size_t size, ssize_t* nwrite)
 {
     sbytes += size;
     if (nwrite) {
         *nwrite = size;
     }
     out_buffer.append((char*)buf, size);
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 void MockBufferIO::set_recv_timeout(int64_t tm)
@@ -165,17 +172,17 @@ int64_t MockBufferIO::get_send_bytes()
     return sbytes;
 }
 
-int MockBufferIO::writev(const iovec *iov, int iov_size, ssize_t* nwrite)
+srs_error_t MockBufferIO::writev(const iovec *iov, int iov_size, ssize_t* nwrite)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     ssize_t total = 0;
     for (int i = 0; i <iov_size; i++) {
         const iovec& pi = iov[i];
         
         ssize_t writen = 0;
-        if ((ret = write(pi.iov_base, pi.iov_len, &writen)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = write(pi.iov_base, pi.iov_len, &writen)) != srs_success) {
+            return err;
         }
         total += writen;
     }
@@ -185,13 +192,13 @@ int MockBufferIO::writev(const iovec *iov, int iov_size, ssize_t* nwrite)
     if (nwrite) {
         *nwrite = total;
     }
-    return ret;
+    return err;
 }
 
-int MockBufferIO::read(void* buf, size_t size, ssize_t* nread)
+srs_error_t MockBufferIO::read(void* buf, size_t size, ssize_t* nread)
 {
     if (in_buffer.length() <= 0) {
-        return ERROR_SOCKET_READ;
+        return srs_error_new(ERROR_SOCKET_READ, "read");
     }
     
     size_t available = srs_min(in_buffer.length(), (int)size);
@@ -202,7 +209,7 @@ int MockBufferIO::read(void* buf, size_t size, ssize_t* nread)
         *nread = available;
     }
     in_buffer.erase(available);
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 #ifdef ENABLE_UTEST_PROTOCOL
@@ -430,41 +437,135 @@ VOID TEST(ProtocolHandshakeTest, BytesEqual)
 */
 VOID TEST(ProtocolUtilityTest, DiscoveryTcUrl)
 {
-    std::string tcUrl; 
-    std::string schema; std::string host; std::string vhost; 
-    std::string app; int port; std::string param;
+    std::string tcUrl, schema, ip, vhost, app, stream, param;
+    int port;
     
-    tcUrl = "rtmp://127.0.0.1:1935/live";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    // general url
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
-    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
     EXPECT_EQ(1935, port);
     
-    tcUrl = "rtmp://127.0.0.1:19351/live";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    tcUrl = "rtmp://winlin.cn:19351/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(19351, port);
+    
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show?key=abc";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(1935, port);
+    EXPECT_STREQ("?key=abc", param.c_str());
+    
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show?key=abc&&vhost=demo.com";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("demo.com", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(1935, port);
+    EXPECT_STREQ("?key=abc&&vhost=demo.com", param.c_str());
+    
+    // vhost in app
+    tcUrl = "rtmp://winlin.cn/live?key=abc"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(1935, port);
+    EXPECT_STREQ("?key=abc", param.c_str());
+    
+    tcUrl = "rtmp://winlin.cn/live?key=abc&&vhost=demo.com"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("demo.com", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(1935, port);
+    EXPECT_STREQ("?key=abc&&vhost=demo.com", param.c_str());
+    
+    // without stream
+    tcUrl = "rtmp://winlin.cn/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
+    EXPECT_EQ(1935, port);
+    
+    tcUrl = "rtmp://127.0.0.1:1935/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
     EXPECT_STREQ("127.0.0.1", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
+    EXPECT_EQ(1935, port);
+    
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
     EXPECT_EQ(19351, port);
     
-    tcUrl = "rtmp://127.0.0.1:19351/live?vhost=demo";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    tcUrl = "rtmp://127.0.0.1:19351/live?vhost=demo"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
     EXPECT_STREQ("demo", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
     EXPECT_EQ(19351, port);
     
-    tcUrl = "rtmp://127.0.0.1:19351/live/show?vhost=demo";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    // no vhost
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
-    EXPECT_STREQ("demo", vhost.c_str());
-    EXPECT_STREQ("live/show", app.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
     EXPECT_EQ(19351, port);
+    
+    // ip and vhost
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream= "show?vhost=demo";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("demo", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(19351, port);
+
+    // _definst_ at the end of app
+    tcUrl = "rtmp://winlin.cn/live/_definst_"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_EQ(1935, port);
 }
 
 /**
@@ -475,15 +576,15 @@ VOID TEST(ProtocolUtilityTest, GenerateTcUrl)
     string ip; string vhost; string app; int port; string tcUrl; string param;
     
     ip = "127.0.0.1"; vhost = "__defaultVhost__"; app = "live"; port = 1935;
-    tcUrl = srs_generate_tc_url(ip, vhost, app, port, param);
+    tcUrl = srs_generate_tc_url(ip, vhost, app, port);
     EXPECT_STREQ("rtmp://127.0.0.1/live", tcUrl.c_str());
     
     ip = "127.0.0.1"; vhost = "demo"; app = "live"; port = 1935;
-    tcUrl = srs_generate_tc_url(ip, vhost, app, port, param);
+    tcUrl = srs_generate_tc_url(ip, vhost, app, port);
     EXPECT_STREQ("rtmp://demo/live", tcUrl.c_str());
     
     ip = "127.0.0.1"; vhost = "demo"; app = "live"; port = 19351;
-    tcUrl = srs_generate_tc_url(ip, vhost, app, port, param);
+    tcUrl = srs_generate_tc_url(ip, vhost, app, port);
     EXPECT_STREQ("rtmp://demo:19351/live", tcUrl.c_str());
 }
 
@@ -5374,7 +5475,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://std.ossrs.net/live", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5384,7 +5485,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://s td.os srs.n et/li v e", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5394,7 +5495,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://s\ntd.o\rssrs.ne\nt/li\nve", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5404,7 +5505,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://std.ossrs.net/live ", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5437,6 +5538,92 @@ VOID TEST(ProtocolRTMPTest, RTMPHandshakeBytes)
     
     EXPECT_TRUE(ERROR_SUCCESS == bytes.read_s0s1s2(&bio));
     EXPECT_TRUE(bytes.s0s1s2 != NULL);
+}
+
+VOID TEST(ProtocolHTTPTest, ParseHTTPMessage)
+{
+    if (true) {
+        MockBufferIO bio;
+        SrsHttpParser hp;
+        
+        bio.append("GET /gslb/v1/versions HTTP/1.1\r\nContent-Length: 5\r\n\r\nHello");
+        EXPECT_TRUE(0 == hp.initialize(HTTP_REQUEST, false));
+        
+        if (true) {
+            ISrsHttpMessage* req = NULL;
+            SrsAutoFree(ISrsHttpMessage, req);
+            ASSERT_TRUE(0 == hp.parse_message(&bio, &req));
+            
+            // We should read body, or next parsing message will fail.
+            // @see https://github.com/ossrs/srs/issues/1181
+            EXPECT_FALSE(req->body_reader()->eof());
+        }
+        
+        if (true) {
+            bio.append("GET /gslb/v1/versions HTTP/1.1\r\nContent-Length: 5\r\n\r\nHello");
+            
+            // Should fail because there is body which not read.
+            // @see https://github.com/ossrs/srs/issues/1181
+            
+            ISrsHttpMessage* req = NULL;
+            SrsAutoFree(ISrsHttpMessage, req);
+            ASSERT_FALSE(0 == hp.parse_message(&bio, &req));
+        }
+    }
+    
+    if (true) {
+        MockBufferIO bio;
+        SrsHttpParser hp;
+        
+        bio.append("GET /gslb/v1/versions HTTP/1.1\r\nContent-Length: 5\r\n\r\nHello");
+        ASSERT_TRUE(0 == hp.initialize(HTTP_REQUEST, false));
+        
+        ISrsHttpMessage* req = NULL;
+        SrsAutoFree(ISrsHttpMessage, req);
+        ASSERT_TRUE(0 == hp.parse_message(&bio, &req));
+        
+        char v[64] = {0};
+        EXPECT_TRUE(0 == req->body_reader()->read(v, sizeof(v), NULL));
+        EXPECT_TRUE(string("Hello") == string(v));
+        
+        EXPECT_TRUE(req->body_reader()->eof());
+    }
+    
+    if (true) {
+        MockBufferIO bio;
+        SrsHttpParser hp;
+        
+        bio.append("GET /gslb/v1/versions HTTP/1.1\r\nContent-Length: 0\r\n\r\n");
+        ASSERT_TRUE(0 == hp.initialize(HTTP_REQUEST, false));
+        
+        ISrsHttpMessage* req = NULL;
+        SrsAutoFree(ISrsHttpMessage, req);
+        EXPECT_TRUE(0 == hp.parse_message(&bio, &req));
+    }
+    
+    if (true) {
+        MockBufferIO bio;
+        SrsHttpParser hp;
+        
+        bio.append("GET /gslb/v1/versions HTTP/1.1\r\n\r\n");
+        ASSERT_TRUE(0 == hp.initialize(HTTP_REQUEST, false));
+        
+        ISrsHttpMessage* req = NULL;
+        SrsAutoFree(ISrsHttpMessage, req);
+        EXPECT_TRUE(0 == hp.parse_message(&bio, &req));
+    }
+    
+    if (true) {
+        MockBufferIO bio;
+        SrsHttpParser hp;
+        
+        bio.append("GET /gslb/v1/versions HTTP/1.1\r\n\r\n");
+        ASSERT_TRUE(0 == hp.initialize(HTTP_REQUEST, false));
+        
+        ISrsHttpMessage* req = NULL;
+        SrsAutoFree(ISrsHttpMessage, req);
+        EXPECT_TRUE(0 == hp.parse_message(&bio, &req));
+    }
 }
 
 #endif

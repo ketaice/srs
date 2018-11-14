@@ -73,7 +73,7 @@ SRS_EXPORT_LIBRTMP_PROJECT=NO
 # export the srs-librtmp to a single .h and .c, NO to disable it.
 SRS_EXPORT_LIBRTMP_SINGLE=NO
 # valgrind
-SRS_VALGRIND=YES
+SRS_VALGRIND=NO
 #
 ################################################################
 # presets
@@ -566,6 +566,9 @@ function apply_user_presets() {
         SRS_GPERF_CP=NO
         SRS_GPROF=NO
         SRS_STATIC=NO
+        # valgrind is not supported by macOS sierra, read
+        # https://stackoverflow.com/questions/40650338/valgrind-on-macos-sierra
+        SRS_VALGRIND=NO
     fi
 
     # if dev specified, open features if possible.
@@ -862,6 +865,16 @@ function check_option_conflicts() {
     if [[ -z $SRS_PREFIX ]]; then echo "you must specifies the prefix, see: ./configure --prefix"; __check_ok=NO; fi
     if [ $__check_ok = NO ]; then
         exit 1;
+    fi
+
+    if [[ $SRS_OSX == YES ]]; then
+        macOSVersion=`sw_vers -productVersion`
+        macOSVersionMajor=`echo $macOSVersion|awk -F '.' '{print $1}'`
+        macOSVersionMinor=`echo $macOSVersion|awk -F '.' '{print $2}'`
+        if [[ $macOSVersionMajor -ge 10 && $macOSVersionMinor -ge 14 ]]; then
+            echo "macOS $macOSVersion is not supported, read https://github.com/ossrs/srs/issues/1250"
+            exit -1
+        fi
     fi
 }
 check_option_conflicts

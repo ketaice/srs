@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -37,6 +37,8 @@ class SrsSharedPtrMessage;
 class SrsFormat;
 class SrsFileWriter;
 class SrsMpdWriter;
+class SrsMp4M2tsInitEncoder;
+class SrsMp4M2tsSegmentEncoder;
 
 /**
  * The init mp4 for FMP4.
@@ -45,12 +47,13 @@ class SrsInitMp4 : public SrsFragment
 {
 private:
     SrsFileWriter* fw;
+    SrsMp4M2tsInitEncoder* init;
 public:
     SrsInitMp4();
     virtual ~SrsInitMp4();
 public:
     // Write the init mp4 file, with the tid(track id).
-    virtual int write(SrsFormat* format, bool video, int tid);
+    virtual srs_error_t write(SrsFormat* format, bool video, int tid);
 };
 
 /**
@@ -60,16 +63,17 @@ class SrsFragmentedMp4 : public SrsFragment
 {
 private:
     SrsFileWriter* fw;
+    SrsMp4M2tsSegmentEncoder* enc;
 public:
     SrsFragmentedMp4();
     virtual ~SrsFragmentedMp4();
 public:
     // Initialize the fragment, create the home dir, open the file.
-    virtual int initialize(SrsRequest* r, bool video, SrsMpdWriter* mpd);
+    virtual srs_error_t initialize(SrsRequest* r, bool video, SrsMpdWriter* mpd, uint32_t tid);
     // Write media message to fragment.
-    virtual int write(SrsSharedPtrMessage* shared_msg, SrsFormat* format);
+    virtual srs_error_t write(SrsSharedPtrMessage* shared_msg, SrsFormat* format);
     // Reap the fragment, close the fd and rename tmp to official file.
-    virtual int reap();
+    virtual srs_error_t reap(uint64_t& dts);
 };
 
 /**
@@ -98,12 +102,13 @@ public:
     SrsMpdWriter();
     virtual ~SrsMpdWriter();
 public:
-    virtual int initialize(SrsRequest* r);
+    virtual srs_error_t initialize(SrsRequest* r);
     // Write MPD according to parsed format of stream.
-    virtual int write(SrsFormat* format);
+    virtual srs_error_t write(SrsFormat* format);
 public:
     // Get the fragment relative home and filename.
-    virtual int get_fragment(bool video, std::string& home, std::string& filename);
+    // The basetime is the absolute time in ms, while the sn(sequence number) is basetime/fragment.
+    virtual srs_error_t get_fragment(bool video, std::string& home, std::string& filename, int64_t& sn, uint64_t& basetime);
 };
 
 /**
@@ -119,6 +124,8 @@ private:
     SrsFragmentWindow* vfragments;
     SrsFragmentedMp4* acurrent;
     SrsFragmentWindow* afragments;
+    uint64_t audio_dts;
+    uint64_t video_dts;
 private:
     // The fragment duration in ms to reap it.
     int fragment;
@@ -130,12 +137,12 @@ public:
     SrsDashController();
     virtual ~SrsDashController();
 public:
-    virtual int initialize(SrsRequest* r);
-    virtual int on_audio(SrsSharedPtrMessage* shared_audio, SrsFormat* format);
-    virtual int on_video(SrsSharedPtrMessage* shared_video, SrsFormat* format);
+    virtual srs_error_t initialize(SrsRequest* r);
+    virtual srs_error_t on_audio(SrsSharedPtrMessage* shared_audio, SrsFormat* format);
+    virtual srs_error_t on_video(SrsSharedPtrMessage* shared_video, SrsFormat* format);
 private:
-    virtual int refresh_mpd(SrsFormat* format);
-    virtual int refresh_init_mp4(SrsSharedPtrMessage* msg, SrsFormat* format);
+    virtual srs_error_t refresh_mpd(SrsFormat* format);
+    virtual srs_error_t refresh_init_mp4(SrsSharedPtrMessage* msg, SrsFormat* format);
 };
 
 /**
@@ -154,13 +161,13 @@ public:
     virtual ~SrsDash();
 public:
     // Initalize the encoder.
-    virtual int initialize(SrsOriginHub* h, SrsRequest* r);
+    virtual srs_error_t initialize(SrsOriginHub* h, SrsRequest* r);
     // When stream start publishing.
-    virtual int on_publish();
+    virtual srs_error_t on_publish();
     // When got an shared audio message.
-    virtual int on_audio(SrsSharedPtrMessage* shared_audio, SrsFormat* format);
+    virtual srs_error_t on_audio(SrsSharedPtrMessage* shared_audio, SrsFormat* format);
     // When got an shared video message.
-    virtual int on_video(SrsSharedPtrMessage* shared_video, SrsFormat* format);
+    virtual srs_error_t on_video(SrsSharedPtrMessage* shared_video, SrsFormat* format);
     // When stream stop publishing.
     virtual void on_unpublish();
 };

@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -40,10 +40,10 @@ class SrsProcess;
  * @see https://github.com/arut/nginx-rtmp-module/wiki/Directives#exec_push
  * @see https://github.com/ossrs/srs/issues/367
  */
-class SrsNgExec : public ISrsReusableThreadHandler
+class SrsNgExec : public ISrsCoroutineHandler
 {
 private:
-    SrsReusableThread* pthread;
+    SrsCoroutine* trd;
     SrsPithyPrint* pprint;
     std::string input_stream_name;
     std::vector<SrsProcess*> exec_publishs;
@@ -51,14 +51,15 @@ public:
     SrsNgExec();
     virtual ~SrsNgExec();
 public:
-    virtual int on_publish(SrsRequest* req);
+    virtual srs_error_t on_publish(SrsRequest* req);
     virtual void on_unpublish();
 // interface ISrsReusableThreadHandler.
 public:
-    virtual int cycle();
-    virtual void on_thread_stop();
+    virtual srs_error_t cycle();
 private:
-    virtual int parse_exec_publish(SrsRequest* req);
+    virtual srs_error_t do_cycle();
+private:
+    virtual srs_error_t parse_exec_publish(SrsRequest* req);
     virtual void clear_exec_publish();
     virtual void show_exec_log_message();
     virtual std::string parse(SrsRequest* req, std::string tmpl);

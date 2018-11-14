@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -50,7 +50,7 @@ public:
      * this method is the actual execute method of task,
      * for example, to notify callback server.
      */
-    virtual int call() = 0;
+    virtual srs_error_t call() = 0;
     /**
      * convert task to string to describe it.
      * used for logger.
@@ -63,25 +63,25 @@ public:
  * when worker call with the task, the worker will do it in isolate thread.
  * that is, the task is execute/call in async mode.
  */
-class SrsAsyncCallWorker : public ISrsReusableThreadHandler
+class SrsAsyncCallWorker : public ISrsCoroutineHandler
 {
 private:
-    SrsReusableThread* pthread;
+    SrsCoroutine* trd;
 protected:
     std::vector<ISrsAsyncCallTask*> tasks;
-    st_cond_t wait;
+    srs_cond_t wait;
 public:
     SrsAsyncCallWorker();
     virtual ~SrsAsyncCallWorker();
 public:
-    virtual int execute(ISrsAsyncCallTask* t);
+    virtual srs_error_t execute(ISrsAsyncCallTask* t);
     virtual int count();
 public:
-    virtual int start();
+    virtual srs_error_t start();
     virtual void stop();
 // interface ISrsReusableThreadHandler
 public:
-    virtual int cycle();
+    virtual srs_error_t cycle();
 };
 
 #endif

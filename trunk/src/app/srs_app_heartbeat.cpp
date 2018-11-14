@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -46,20 +46,29 @@ SrsHttpHeartbeat::~SrsHttpHeartbeat()
 
 void SrsHttpHeartbeat::heartbeat()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = do_heartbeat();
+    if (err != srs_success) {
+        srs_warn("heartbeat err=%s", srs_error_desc(err).c_str());
+    }
+    srs_freep(err);
+    return;
+}
+
+srs_error_t SrsHttpHeartbeat::do_heartbeat()
+{
+    srs_error_t err = srs_success;
     
     std::string url = _srs_config->get_heartbeat_url();
     
     SrsHttpUri uri;
-    if ((ret = uri.initialize(url)) != ERROR_SUCCESS) {
-        srs_error("http uri parse hartbeart url failed. url=%s, ret=%d", url.c_str(), ret);
-        return;
+    if ((err = uri.initialize(url)) != srs_success) {
+        return srs_error_wrap(err, "http uri parse hartbeart url failed. url=%s", url.c_str());
     }
     
     std::string ip = "";
     std::string device_id = _srs_config->get_heartbeat_device_id();
     
-    vector<string>& ips = srs_get_local_ipv4_ips();
+    vector<string>& ips = srs_get_local_ips();
     if (!ips.empty()) {
         ip = ips[_srs_config->get_stats_network() % (int)ips.size()];
     }
@@ -78,27 +87,22 @@ void SrsHttpHeartbeat::heartbeat()
     }
     
     SrsHttpClient http;
-    if ((ret = http.initialize(uri.get_host(), uri.get_port())) != ERROR_SUCCESS) {
-        return;
+    if ((err = http.initialize(uri.get_host(), uri.get_port())) != srs_success) {
+        return srs_error_wrap(err, "init uri=%s", uri.get_url().c_str());
     }
     
     std::string req = obj->dumps();
     ISrsHttpMessage* msg = NULL;
-    if ((ret = http.post(uri.get_path(), req, &msg)) != ERROR_SUCCESS) {
-        srs_info("http post hartbeart uri failed. url=%s, request=%s, ret=%d",
-                 url.c_str(), req.c_str(), ret);
-        return;
+    if ((err = http.post(uri.get_path(), req, &msg)) != srs_success) {
+        return srs_error_wrap(err, "http post hartbeart uri failed. url=%s, request=%s", url.c_str(), req.c_str());
     }
     SrsAutoFree(ISrsHttpMessage, msg);
     
     std::string res;
-    if ((ret = msg->body_read_all(res)) != ERROR_SUCCESS) {
-        return;
+    if ((err = msg->body_read_all(res)) != srs_success) {
+        return srs_error_wrap(err, "read body");
     }
     
-    srs_info("http hook hartbeart success. url=%s, request=%s, response=%s, ret=%d",
-             url.c_str(), req.c_str(), res.c_str(), ret);
-    
-    return;
+    return err;
 }
 

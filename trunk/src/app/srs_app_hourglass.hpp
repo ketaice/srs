@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -40,7 +40,7 @@ public:
     /**
      * notify the handler, the type and tick.
      */
-    virtual int notify(int type, int interval, int64_t tick) = 0;
+    virtual srs_error_t notify(int type, int interval, int64_t tick) = 0;
 };
 
 /**
@@ -87,11 +87,11 @@ public:
     // add a pair of tick(type, interval).
     // @param type the type of tick.
     // @param interval the interval in ms of tick.
-    virtual int tick(int type, int interval);
+    virtual srs_error_t tick(int type, int interval);
 public:
     // cycle the hourglass, which will sleep resolution every time.
     // and call handler when ticked.
-    virtual int cycle();
+    virtual srs_error_t cycle();
 };
 
 #endif

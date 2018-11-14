@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -51,7 +51,7 @@ public:
      * @param url the api server url, to valid the client.
      *         ignore if empty.
      */
-    static int on_connect(std::string url, SrsRequest* req);
+    static srs_error_t on_connect(std::string url, SrsRequest* req);
     /**
      * on_close hook, when client disconnect to srs, where client is valid by on_connect.
      * @param url the api server url, to process the event.
@@ -63,7 +63,7 @@ public:
      * @param url the api server url, to valid the client.
      *         ignore if empty.
      */
-    static int on_publish(std::string url, SrsRequest* req);
+    static srs_error_t on_publish(std::string url, SrsRequest* req);
     /**
      * on_unpublish hook, when client(encoder) stop publish stream.
      * @param url the api server url, to process the event.
@@ -75,7 +75,7 @@ public:
      * @param url the api server url, to valid the client.
      *         ignore if empty.
      */
-    static int on_play(std::string url, SrsRequest* req);
+    static srs_error_t on_play(std::string url, SrsRequest* req);
     /**
      * on_stop hook, when client stop to play the stream.
      * @param url the api server url, to process the event.
@@ -89,7 +89,7 @@ public:
      * @param file the file path, can be relative or absolute path.
      * @param cid the source connection cid, for the on_dvr is async call.
      */
-    static int on_dvr(int cid, std::string url, SrsRequest* req, std::string file);
+    static srs_error_t on_dvr(int cid, std::string url, SrsRequest* req, std::string file);
     /**
      * when hls reap segment, callback.
      * @param url the api server url, to process the event.
@@ -102,7 +102,8 @@ public:
      * @param duration the segment duration in seconds.
      * @param cid the source connection cid, for the on_dvr is async call.
      */
-    static int on_hls(int cid, std::string url, SrsRequest* req, std::string file, std::string ts_url, std::string m3u8, std::string m3u8_url, int sn, double duration);
+    static srs_error_t on_hls(int cid, std::string url, SrsRequest* req, std::string file, std::string ts_url,
+        std::string m3u8, std::string m3u8_url, int sn, double duration);
     /**
      * when hls reap segment, callback.
      * @param url the api server url, to process the event.
@@ -111,9 +112,13 @@ public:
      * @param nb_notify the max bytes to read from notify server.
      * @param cid the source connection cid, for the on_dvr is async call.
      */
-    static int on_hls_notify(int cid, std::string url, SrsRequest* req, std::string ts_url, int nb_notify);
+    static srs_error_t on_hls_notify(int cid, std::string url, SrsRequest* req, std::string ts_url, int nb_notify);
+    /**
+     * Discover co-workers for origin cluster.
+     */
+    static srs_error_t discover_co_workers(std::string url, std::string& host, int& port);
 private:
-    static int do_post(SrsHttpClient* hc, std::string url, std::string req, int& code, std::string& res);
+    static srs_error_t do_post(SrsHttpClient* hc, std::string url, std::string req, int& code, std::string& res);
 };
 
 #endif

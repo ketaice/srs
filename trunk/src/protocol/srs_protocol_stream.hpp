@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -134,7 +134,7 @@ public:
      * @return an int error code, error if required_size negative.
      * @remark, we actually maybe read more than required_size, maybe 4k for example.
      */
-    virtual int grow(ISrsReader* reader, int required_size);
+    virtual srs_error_t grow(ISrsReader* reader, int required_size);
 public:
 #ifdef SRS_PERF_MERGED_READ
     /**

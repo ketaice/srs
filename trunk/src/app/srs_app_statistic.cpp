@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  *
- * Copyright (c) 2013-2017 OSSRS(winlin)
+ * Copyright (c) 2013-2018 Winlin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -35,10 +35,13 @@ using namespace std;
 #include <srs_kernel_utility.hpp>
 #include <srs_protocol_amf0.hpp>
 
-int64_t srs_gvid = getpid() * 3;
+int64_t srs_gvid = 0;
 
 int64_t srs_generate_id()
 {
+    if (srs_gvid == 0) {
+        srs_gvid = getpid() * 3;
+    }
     return srs_gvid++;
 }
 
@@ -58,9 +61,9 @@ SrsStatisticVhost::~SrsStatisticVhost()
     srs_freep(kbps);
 }
 
-int SrsStatisticVhost::dumps(SrsJsonObject* obj)
+srs_error_t SrsStatisticVhost::dumps(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // dumps the config of vhost.
     bool hls_enabled = _srs_config->get_hls_enabled(vhost);
@@ -88,7 +91,7 @@ int SrsStatisticVhost::dumps(SrsJsonObject* obj)
         hls->set("fragment", SrsJsonAny::number(_srs_config->get_hls_fragment(vhost)));
     }
     
-    return ret;
+    return err;
 }
 
 SrsStatisticStream::SrsStatisticStream()
@@ -123,9 +126,9 @@ SrsStatisticStream::~SrsStatisticStream()
     srs_freep(kbps);
 }
 
-int SrsStatisticStream::dumps(SrsJsonObject* obj)
+srs_error_t SrsStatisticStream::dumps(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     obj->set("id", SrsJsonAny::integer(id));
     obj->set("name", SrsJsonAny::str(stream.c_str()));
@@ -174,7 +177,7 @@ int SrsStatisticStream::dumps(SrsJsonObject* obj)
         audio->set("profile", SrsJsonAny::str(srs_aac_object2str(aac_object).c_str()));
     }
     
-    return ret;
+    return err;
 }
 
 void SrsStatisticStream::publish(int cid)
@@ -208,9 +211,9 @@ SrsStatisticClient::~SrsStatisticClient()
 {
 }
 
-int SrsStatisticClient::dumps(SrsJsonObject* obj)
+srs_error_t SrsStatisticClient::dumps(SrsJsonObject* obj)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     obj->set("id", SrsJsonAny::integer(id));
     obj->set("vhost", SrsJsonAny::integer(stream->vhost->id));
@@ -224,10 +227,10 @@ int SrsStatisticClient::dumps(SrsJsonObject* obj)
     obj->set("publish", SrsJsonAny::boolean(srs_client_type_is_publish(type)));
     obj->set("alive", SrsJsonAny::number((srs_get_system_time_ms() - create) / 1000.0));
     
-    return ret;
+    return err;
 }
 
-SrsStatistic* SrsStatistic::_instance = new SrsStatistic();
+SrsStatistic* SrsStatistic::_instance = NULL;
 
 SrsStatistic::SrsStatistic()
 {
@@ -271,6 +274,9 @@ SrsStatistic::~SrsStatistic()
 
 SrsStatistic* SrsStatistic::instance()
 {
+    if (_instance == NULL) {
+        _instance = new SrsStatistic();
+    }
     return _instance;
 }
 
@@ -285,6 +291,10 @@ SrsStatisticVhost* SrsStatistic::find_vhost(int vid)
 
 SrsStatisticVhost* SrsStatistic::find_vhost(string name)
 {
+    if (rvhosts.empty()) {
+        return NULL;
+    }
+    
     std::map<string, SrsStatisticVhost*>::iterator it;
     if ((it = rvhosts.find(name)) != rvhosts.end()) {
         return it->second;
@@ -310,9 +320,9 @@ SrsStatisticClient* SrsStatistic::find_client(int cid)
     return NULL;
 }
 
-int SrsStatistic::on_video_info(SrsRequest* req, SrsVideoCodecId vcodec, SrsAvcProfile avc_profile, SrsAvcLevel avc_level, int width, int height)
+srs_error_t SrsStatistic::on_video_info(SrsRequest* req, SrsVideoCodecId vcodec, SrsAvcProfile avc_profile, SrsAvcLevel avc_level, int width, int height)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsStatisticVhost* vhost = create_vhost(req);
     SrsStatisticStream* stream = create_stream(vhost, req);
@@ -325,12 +335,12 @@ int SrsStatistic::on_video_info(SrsRequest* req, SrsVideoCodecId vcodec, SrsAvcP
     stream->width = width;
     stream->height = height;
     
-    return ret;
+    return err;
 }
 
-int SrsStatistic::on_audio_info(SrsRequest* req, SrsAudioCodecId acodec, SrsAudioSampleRate asample_rate, SrsAudioChannels asound_type, SrsAacObjectType aac_object)
+srs_error_t SrsStatistic::on_audio_info(SrsRequest* req, SrsAudioCodecId acodec, SrsAudioSampleRate asample_rate, SrsAudioChannels asound_type, SrsAacObjectType aac_object)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsStatisticVhost* vhost = create_vhost(req);
     SrsStatisticStream* stream = create_stream(vhost, req);
@@ -341,19 +351,19 @@ int SrsStatistic::on_audio_info(SrsRequest* req, SrsAudioCodecId acodec, SrsAudi
     stream->asound_type = asound_type;
     stream->aac_object = aac_object;
     
-    return ret;
+    return err;
 }
 
-int SrsStatistic::on_video_frames(SrsRequest* req, int nb_frames)
+srs_error_t SrsStatistic::on_video_frames(SrsRequest* req, int nb_frames)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsStatisticVhost* vhost = create_vhost(req);
     SrsStatisticStream* stream = create_stream(vhost, req);
     
     stream->nb_frames += nb_frames;
     
-    return ret;
+    return err;
 }
 
 void SrsStatistic::on_stream_publish(SrsRequest* req, int cid)
@@ -387,9 +397,9 @@ void SrsStatistic::on_stream_close(SrsRequest* req)
     }
 }
 
-int SrsStatistic::on_client(int id, SrsRequest* req, SrsConnection* conn, SrsRtmpConnType type)
+srs_error_t SrsStatistic::on_client(int id, SrsRequest* req, SrsConnection* conn, SrsRtmpConnType type)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     SrsStatisticVhost* vhost = create_vhost(req);
     SrsStatisticStream* stream = create_stream(vhost, req);
@@ -412,7 +422,7 @@ int SrsStatistic::on_client(int id, SrsRequest* req, SrsConnection* conn, SrsRtm
     stream->nb_clients++;
     vhost->nb_clients++;
     
-    return ret;
+    return err;
 }
 
 void SrsStatistic::on_disconnect(int id)
@@ -481,9 +491,9 @@ int64_t SrsStatistic::server_id()
     return _server_id;
 }
 
-int SrsStatistic::dumps_vhosts(SrsJsonArray* arr)
+srs_error_t SrsStatistic::dumps_vhosts(SrsJsonArray* arr)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     std::map<int64_t, SrsStatisticVhost*>::iterator it;
     for (it = vhosts.begin(); it != vhosts.end(); it++) {
@@ -492,17 +502,17 @@ int SrsStatistic::dumps_vhosts(SrsJsonArray* arr)
         SrsJsonObject* obj = SrsJsonAny::object();
         arr->append(obj);
         
-        if ((ret = vhost->dumps(obj)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = vhost->dumps(obj)) != srs_success) {
+            return srs_error_wrap(err, "dump vhost");
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsStatistic::dumps_streams(SrsJsonArray* arr)
+srs_error_t SrsStatistic::dumps_streams(SrsJsonArray* arr)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     std::map<int64_t, SrsStatisticStream*>::iterator it;
     for (it = streams.begin(); it != streams.end(); it++) {
@@ -511,17 +521,17 @@ int SrsStatistic::dumps_streams(SrsJsonArray* arr)
         SrsJsonObject* obj = SrsJsonAny::object();
         arr->append(obj);
         
-        if ((ret = stream->dumps(obj)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = stream->dumps(obj)) != srs_success) {
+            return srs_error_wrap(err, "dump stream");
         }
     }
     
-    return ret;
+    return err;
 }
 
-int SrsStatistic::dumps_clients(SrsJsonArray* arr, int start, int count)
+srs_error_t SrsStatistic::dumps_clients(SrsJsonArray* arr, int start, int count)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     std::map<int, SrsStatisticClient*>::iterator it = clients.begin();
     for (int i = 0; i < start + count && it != clients.end(); it++, i++) {
@@ -534,12 +544,12 @@ int SrsStatistic::dumps_clients(SrsJsonArray* arr, int start, int count)
         SrsJsonObject* obj = SrsJsonAny::object();
         arr->append(obj);
         
-        if ((ret = client->dumps(obj)) != ERROR_SUCCESS) {
-            return ret;
+        if ((err = client->dumps(obj)) != srs_success) {
+            return srs_error_wrap(err, "dump client");
         }
     }
     
-    return ret;
+    return err;
 }
 
 SrsStatisticVhost* SrsStatistic::create_vhost(SrsRequest* req)
